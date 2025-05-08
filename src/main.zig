@@ -13,8 +13,10 @@ pub fn main() !void {
 
     // std.debug.print("\nOutput: {any}\n", .{new_root});
 
-    new_root = try new_root.insert(allocator, 20) orelse @panic("");
+    new_root = try new_root.insert(allocator, 14) orelse @panic("");
+    new_root = try new_root.insert(allocator, 13) orelse @panic("");
     new_root = try new_root.insert(allocator, 25) orelse @panic("");
+    new_root = try new_root.insert(allocator, 30) orelse @panic("");
 
     std.debug.print("\n\nOutput: {any}\n", .{new_root});
 }

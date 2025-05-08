@@ -52,7 +52,7 @@ pub fn node_gen(T: type) type {
 
         ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
         //Precondiitions and Rules:
-        //You can only rotate left on a node with a right red link
+        //You can only rotate left on a node with a red right link
         //Rotating left on the root node makes the child node the new root
 
         fn rotate_left(node: *Node) void {
@@ -107,7 +107,53 @@ pub fn node_gen(T: type) type {
             std.debug.print("Rotated successfully. Result: {}\n", .{node});
         }
 
-        // fn rotate_right(node: *Node) void {}
+        ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
+        //Precondiitions and Rules:
+        //You can only rotate right on a node with a red left link
+        //Rotating right on the root node makes the child node the new root
+        fn rotate_right(node: *Node) void {
+            std.debug.print("\nRotating node {} right\n", .{node});
+
+            assert(node.left.?.colour == .Red);
+
+            const left_child = node.left orelse @panic("No left child to rotate on\n");
+
+            if (node.parent) |parent| {
+                switch (node.parent_direction) {
+                    .Left => {
+                        assert(parent.left == node);
+                        parent.left = left_child;
+                    },
+                    .Right => {
+                        assert(parent.right == node);
+                        parent.right = left_child;
+                    },
+                    else => @panic("The root node cannot have a parent"),
+                }
+            }
+            left_child.parent = node.parent;
+            left_child.parent_direction = node.parent_direction;
+
+            std.debug.print("Rotating node to left child's right child\n", .{});
+
+            if (left_child.right) |child_right| {
+                std.debug.print("\nReassigning the left child of the node\n", .{});
+                node.left = child_right;
+                child_right.parent = node;
+                child_right.parent_direction = .Left;
+            } else {
+                std.debug.print("Left child of node set to null\n", .{});
+                node.left = null;
+            }
+
+            left_child.right = node;
+            node.parent = left_child;
+            node.parent_direction = .Right;
+            node.colour = .Red;
+            left_child.colour = .Black;
+
+            std.debug.print("Rotated successfully. Result: {}\n", .{node});
+        }
 
         ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
         fn balance_tree(node: *Node) *Node {
@@ -152,13 +198,21 @@ pub fn node_gen(T: type) type {
                 }
                 rotate_left(parent);
             } else {
-                // //We asserted the Root node out of the question earlier on
-                // if (node.parent.?.colour == .Red) {
-                //     rotate_right(node.parent.?);
-                //     colour_flip(node.parent.?); //Rotating a double-left always requires a subsequent colour flip
+                //We asserted the Root node out of the question earlier on
+                if (parent.colour == .Red) {
+                    assert(parent.parent != null); //We can't have a red node as the root of the tree
 
-                // }
-                //A left red link is perfectly fine. Ignore it
+                    const grand_parent = parent.parent orelse @panic("Cannot have double red links without a grandparent\n");
+
+                    rotate_right(grand_parent);
+                    colour_flip(grand_parent.parent.?); //Rotating a double-left always requires a subsequent colour flip
+                    if (grand_parent.parent_direction == .Root) {
+                        assert(grand_parent.parent == null);
+                        std.debug.print("Root node colour flipped. No more nodes to fix. Making root node black.\n", .{});
+                        parent.colour = .Black;
+                    }
+                }
+                // A left red link is perfectly fine. Ignore it
             }
 
             if (node.parent_direction == .Root) {
@@ -167,13 +221,13 @@ pub fn node_gen(T: type) type {
                 return node;
             }
             std.debug.print("Recursively calling balance for node: {}\n", .{node});
-            return balance_tree(node.parent.?);
+            return balance_tree(parent);
         }
 
         ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
         fn colour_flip(node: *Node) void {
-            const left = node.left orelse @panic("Can't flip without two children");
-            const right = node.right orelse @panic("Can't flip without two children");
+            const left = node.left orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
+            const right = node.right orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
 
             std.debug.print("Flipping sub-tree with from node: {}\n\n", .{node.value});
             assert(left.colour == .Red and right.colour == .Red);
