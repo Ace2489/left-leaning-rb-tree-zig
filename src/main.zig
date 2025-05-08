@@ -1,19 +1,41 @@
 const std = @import("std");
-const Node = @import("node.zig").Node;
+const Tree = @import("tree.zig").node_gen;
 
 pub fn main() !void {
     var debug = std.heap.DebugAllocator(.{}).init;
     const allocator = debug.allocator();
-    // defer _ = debug.deinit();
 
-    var big_node = Node(u64).init(10);
+    var root = try Tree(u64).init(allocator, 5);
 
-    const result = try big_node.insert(5, allocator);
-    const result1 = try big_node.insert(50, allocator);
-    std.debug.print("Node:{}\nResult: {}\nResult_Bigger: {}\n", .{ big_node, result, result1 });
+    var new_root = try root.insert(allocator, 10) orelse @panic("");
 
-    const search = big_node.search(10);
-    const not_found = big_node.search(15);
+    new_root = try new_root.insert(allocator, 15) orelse @panic("");
 
-    std.debug.print("Search: {any}\nNOt FOund: {any}", .{ search, not_found });
+    // std.debug.print("\nOutput: {any}\n", .{new_root});
+
+    new_root = try new_root.insert(allocator, 20) orelse @panic("");
+    new_root = try new_root.insert(allocator, 25) orelse @panic("");
+
+    std.debug.print("\n\nOutput: {any}\n", .{new_root});
+}
+
+test "everything works" {
+    const allocator = std.heap.page_allocator; //Replace with the testing allocator after writing the logic to deinit nodes
+    const expect = std.testing.expect;
+
+    var root = try Tree(u64).init(allocator, 5);
+
+    var new_root = try root.insert(allocator, 10) orelse @panic("");
+
+    new_root = try new_root.insert(allocator, 15) orelse @panic("");
+    new_root = try new_root.insert(allocator, 14) orelse @panic("");
+
+    new_root = try new_root.insert(allocator, 16) orelse @panic("");
+    // new_root = try new_root.insert(allocator, 17) orelse @panic("");
+    // new_root = try new_root.insert(allocator, 20) orelse @panic("");
+
+    try expect(new_root.value == 15);
+    try expect(new_root.colour == .Black);
+    try expect(new_root.parent_direction == .Root);
+    try expect(new_root.parent == null);
 }
