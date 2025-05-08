@@ -15,6 +15,7 @@ pub fn node_gen(T: type) type {
         left: ?*Node = null,
         right: ?*Node = null,
         parent: ?*Node,
+        ///Note: When ParentDirection == .Root, the parent field is required to be null, any other thing implies a programmer error
         parent_direction: ParentDirection,
         colour: Colour = .Black,
         value: T,
@@ -104,7 +105,7 @@ pub fn node_gen(T: type) type {
             node.colour = .Red;
             right_child.colour = .Black;
 
-            std.debug.print("Rotated successfully. Result: {}\n", .{node});
+            std.debug.print("Rotated successfully.\n", .{});
         }
 
         ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
@@ -112,7 +113,7 @@ pub fn node_gen(T: type) type {
         //You can only rotate right on a node with a red left link
         //Rotating right on the root node makes the child node the new root
         fn rotate_right(node: *Node) void {
-            std.debug.print("\nRotating node {} right\n", .{node});
+            std.debug.print("\nRotating node {} right\n", .{node.value});
 
             assert(node.left.?.colour == .Red);
 
@@ -152,7 +153,7 @@ pub fn node_gen(T: type) type {
             node.colour = .Red;
             left_child.colour = .Black;
 
-            std.debug.print("Rotated successfully. Result: {}\n", .{node});
+            std.debug.print("Rotated successfully {}\n", .{node});
         }
 
         ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
@@ -198,17 +199,21 @@ pub fn node_gen(T: type) type {
                 }
                 rotate_left(parent);
             } else {
-                //We asserted the Root node out of the question earlier on
+                //Because of the earlier assertion, we are assured that the parent of this node is not the root node
                 if (parent.colour == .Red) {
+                    std.debug.print("Fixing double red links\n", .{});
                     assert(parent.parent != null); //We can't have a red node as the root of the tree
 
                     const grand_parent = parent.parent orelse @panic("Cannot have double red links without a grandparent\n");
 
                     rotate_right(grand_parent);
-                    colour_flip(grand_parent.parent.?); //Rotating a double-left always requires a subsequent colour flip
-                    if (grand_parent.parent_direction == .Root) {
-                        assert(grand_parent.parent == null);
-                        std.debug.print("Root node colour flipped. No more nodes to fix. Making root node black.\n", .{});
+                    //After flipping the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
+                    assert(grand_parent.parent == parent);
+                    colour_flip(parent); //Rotating a double-left always requires a subsequent colour flip
+
+                    if (parent.parent_direction == .Root) {
+                        assert(parent.parent == null);
+                        std.debug.print("ZRoot node colour flipped. No more nodes to fix. Making root node black.\n", .{});
                         parent.colour = .Black;
                     }
                 }
@@ -220,7 +225,7 @@ pub fn node_gen(T: type) type {
                 std.debug.print("Root node reached before recursive call. Exiting....\n", .{});
                 return node;
             }
-            std.debug.print("Recursively calling balance for node: {}\n", .{node});
+            std.debug.print("Recursively calling balance for node: {}\n", .{node.value});
             return balance_tree(parent);
         }
 
@@ -229,7 +234,7 @@ pub fn node_gen(T: type) type {
             const left = node.left orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
             const right = node.right orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
 
-            std.debug.print("Flipping sub-tree with from node: {}\n\n", .{node.value});
+            std.debug.print("Flipping sub-tree from parent node: {}\n\n", .{node.value});
             assert(left.colour == .Red and right.colour == .Red);
 
             left.colour = .Black;
