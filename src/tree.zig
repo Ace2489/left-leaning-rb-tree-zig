@@ -51,8 +51,9 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
         }
 
         pub fn search(self: *Node, value: u64) ?*Node {
-            if (self.value == value) return self;
-            const branch = if (value < self.value) self.left else self.right;
+            const compare = compare_fn(value, self.value);
+            if (compare == .eq) return self;
+            const branch = if (compare == .lt) self.left else self.right;
             if (branch) |child| return child.*.search(value);
             return null;
         }
