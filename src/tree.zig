@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const Order = std.math.Order;
 
 const Colour = enum(u1) { Red, Black };
 const ParentDirection = enum(u2) {
@@ -9,7 +10,7 @@ const ParentDirection = enum(u2) {
     Root, // This is the root node
 };
 
-pub fn node_gen(T: type) type {
+pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) type {
     return struct {
         const Node = @This();
         left: ?*Node = null,
@@ -27,9 +28,14 @@ pub fn node_gen(T: type) type {
         }
 
         pub fn insert(self: *Node, allocator: Allocator, value: u64) !?*Node {
-            if (self.value == value) return null;
+            const compare: Order = compare_fn(value, self.value);
 
-            const branch: *?*Node, const direction: u1 = if (value < self.value) .{ &self.left, 0 } else .{ &self.right, 1 };
+            const branch: *?*Node, const direction: u1 = switch (compare) {
+                .eq => return null,
+                .lt => .{ &self.left, 0 },
+                .gt => .{ &self.right, 1 },
+            };
+
             if (branch.*) |child| {
                 return child.*.insert(allocator, value);
             }
@@ -198,7 +204,7 @@ pub fn node_gen(T: type) type {
                     }
                 }
                 rotate_left(parent);
-            } else {
+            } else { //a left red child
                 //Because of the earlier assertion, we are assured that the parent of this node is not the root node
                 if (parent.colour == .Red) {
                     std.debug.print("Fixing double red links\n", .{});
@@ -207,7 +213,7 @@ pub fn node_gen(T: type) type {
                     const grand_parent = parent.parent orelse @panic("Cannot have double red links without a grandparent\n");
 
                     rotate_right(grand_parent);
-                    //After flipping the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
+                    //After flipping, the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
                     assert(grand_parent.parent == parent);
                     colour_flip(parent); //Rotating a double-left always requires a subsequent colour flip
 

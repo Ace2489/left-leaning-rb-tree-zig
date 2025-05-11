@@ -1,4 +1,5 @@
 -- diagrams for function documenentation
+-- deinit method for the tree
 -- automated tests for appropriate actions in balancing scenarios: right red links, double-left red links, red children
 -- automated tests to ensure LLRB constraints for all operations:
     - No right links, no double-left red links, and no red right and left children

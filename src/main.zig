@@ -5,7 +5,7 @@ pub fn main() !void {
     var debug = std.heap.DebugAllocator(.{}).init;
     const allocator = debug.allocator();
 
-    var root = try Tree(u64).init(allocator, 14);
+    var root = try Tree(u64, compare_fn).init(allocator, 14);
 
     var new_root = try root.insert(allocator, 25) orelse @panic("");
 
@@ -19,6 +19,11 @@ pub fn main() !void {
     std.debug.print("\n\nOutput: {any}\n", .{new_root});
 }
 
+fn compare_fn(a: u64, b: u64) std.math.Order {
+    if (a == b) return .eq;
+    if (a < b) return .lt;
+    return .gt;
+}
 test "everything works" {
     const allocator = std.heap.page_allocator; //Replace with the testing allocator after writing the logic to deinit nodes
     const expect = std.testing.expect;
