@@ -1,22 +1,17 @@
 const std = @import("std");
-const Tree = @import("tree.zig").node_gen;
+const Tree = @import("tree.zig").Tree;
 
 pub fn main() !void {
     var debug = std.heap.DebugAllocator(.{}).init;
     const allocator = debug.allocator();
+    defer _ = debug.deinit();
 
     var root = try Tree(u64, compare_fn).init(allocator, 14);
+    defer root.deinit(allocator);
 
-    var new_root = try root.insert(allocator, 25) orelse @panic("");
-
-    // new_root = try new_root.insert(allocator, 15) orelse @panic("");
-
-    // new_root = try new_root.insert(allocator, 25) orelse @panic("");
-    new_root = try new_root.insert(allocator, 10) orelse @panic("");
-    // new_root = try new_root.insert(allocator, 13) orelse @panic("");
-    // new_root = try new_root.insert(allocator, 30) orelse @panic("");
-
-    std.debug.print("\n\nOutput: {any}\n", .{new_root});
+    var tree_root = try root.insert(allocator, 25) orelse @panic("");
+    tree_root = try tree_root.insert(allocator, 10) orelse @panic("");
+    std.debug.print("\n\nOutput: {any}\n", .{tree_root});
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {

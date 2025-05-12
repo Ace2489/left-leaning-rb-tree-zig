@@ -10,7 +10,29 @@ const ParentDirection = enum(u2) {
     Root, // This is the root node
 };
 
-pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) type {
+pub fn Tree(T: type, compare_fn: fn (value: T, self_value: T) Order) type {
+    return struct {
+        const Node = node_gen(T, compare_fn);
+        const Self = @This();
+        root: *Node,
+
+        pub fn init(allocator: Allocator, value: T) !Self {
+            return Self{ .root = try Node.init(allocator, value) };
+        }
+
+        pub fn insert(self: *Self, allocator: Allocator, value: T) !?*Self {
+            const new_root = try self.root.insert(allocator, value) orelse return null;
+            self.root = new_root;
+            return self;
+        }
+
+        pub fn deinit(self: *Self, allocator: Allocator) void {
+            self.root.deinit(allocator);
+        }
+    };
+}
+
+fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) type {
     return struct {
         const Node = @This();
         left: ?*Node = null,
@@ -27,7 +49,7 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             return alloc_node;
         }
 
-        pub fn insert(self: *Node, allocator: Allocator, value: u64) !?*Node {
+        pub fn insert(self: *Node, allocator: Allocator, value: T) !?*Node {
             const compare: Order = compare_fn(value, self.value);
 
             const branch: *?*Node, const direction: u1 = switch (compare) {
@@ -50,7 +72,7 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             return balance_tree(branch.*.?);
         }
 
-        pub fn search(self: *Node, value: u64) ?*Node {
+        pub fn search(self: *Node, value: T) ?*Node {
             const compare = compare_fn(value, self.value);
             if (compare == .eq) return self;
             const branch = if (compare == .lt) self.left else self.right;
@@ -58,11 +80,15 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             return null;
         }
 
-        ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
-        //Precondiitions and Rules:
+        pub fn deinit(self: *Node, allocator: Allocator) void {
+            if (self.left) |left| left.deinit(allocator);
+            if (self.right) |right| right.deinit(allocator);
+            allocator.destroy(self);
+        }
+
+        ///Precondiitions and Rules:
         //You can only rotate left on a node with a red right link
         //Rotating left on the root node makes the child node the new root
-
         fn rotate_left(node: *Node) void {
             std.debug.print("\nRotating node {} left\n", .{node.value});
 
@@ -115,8 +141,7 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             std.debug.print("Rotated successfully.\n", .{});
         }
 
-        ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
-        //Precondiitions and Rules:
+        ///Precondiitions and Rules:
         //You can only rotate right on a node with a red left link
         //Rotating right on the root node makes the child node the new root
         fn rotate_right(node: *Node) void {
@@ -163,7 +188,6 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             std.debug.print("Rotated successfully {}\n", .{node});
         }
 
-        ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
         fn balance_tree(node: *Node) *Node {
             std.debug.print("\nBalancing tree from node: {}\n", .{node.value});
 
@@ -236,7 +260,6 @@ pub fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order
             return balance_tree(parent);
         }
 
-        ///Called statically. DO NOT CALL THIS FROM AN INSTANCE
         fn colour_flip(node: *Node) void {
             const left = node.left orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
             const right = node.right orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
