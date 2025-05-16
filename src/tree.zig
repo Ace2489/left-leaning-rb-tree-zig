@@ -33,9 +33,8 @@ pub fn Tree(T: type, compare_fn: fn (value: T, self_value: T) Order) type {
             return Self{ .root_idx = Node.init(nodes, values, root), .nodes = nodes, .values = values };
         }
 
-        pub fn insert(self: *Self, value: T) !*Self {
-            self.root_idx = self.nodes.items[@as(usize, self.root_idx)].insert(self.elements, self.values, self.root_idx, value);
-            return self.nodes.items[@as(usize, self.root_idx)];
+        pub fn insert(self: *Self, value: T) void {
+            self.root_idx = self.nodes.items[@as(usize, self.root_idx)].insert(self.nodes, self.values, self.root_idx, value);
         }
 
         pub fn deinit(self: *Self, allocator: Allocator) void {
@@ -81,18 +80,18 @@ fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) ty
             return elem_index;
         }
 
-        pub fn insert(self: *Node, elements: *NodeList, values: *ValueList, self_idx: u32, value: T) u32 {
-            const compare: Order = compare_fn(value, self.value_idx);
+        pub fn insert(self: *Node, nodes: *NodeList, values: *ValueList, self_idx: u32, value: T) u32 {
+            const compare: Order = compare_fn(value, values.items[self.value_idx]);
 
-            const branch: u32, const direction: u1 = switch (compare) {
-                .eq => return null,
-                .lt => .{ self.left_idx, 0 },
-                .gt => .{ self.right_idx, 1 },
+            const branch_idx: *u32, const direction: u1 = switch (compare) {
+                .eq => return NULL_IDX,
+                .lt => .{ &self.left_idx, 0 },
+                .gt => .{ &self.right_idx, 1 },
             };
 
             //maybe address branch misses later
-            if (branch != NULL_IDX) {
-                return elements[branch].insert(elements, value);
+            if (branch_idx.* != NULL_IDX) {
+                return nodes.*.items[branch_idx.*].insert(nodes, values, branch_idx.*, value);
             }
 
             values.*.appendAssumeCapacity(value);
@@ -103,13 +102,15 @@ fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) ty
 
             const child = Node{ .value_idx = val_index, .colour = .Red, .parent_idx = self_idx, .parent_direction = @enumFromInt(direction) };
 
-            elements.*.appendAssumeCapacity(child);
+            nodes.*.appendAssumeCapacity(child);
 
-            const len_elements = elements.*.items.len;
+            const len_elements = nodes.*.items.len;
             assert(len_elements < 0xFFFFFFFF);
-            const elem_index: u32 = @truncate(len_elements - 1);
+            const child_index: u32 = @truncate(len_elements - 1);
 
-            return elem_index;
+            branch_idx.* = child_index;
+
+            return balance_tree(nodes, child_index);
         }
 
         //     pub fn search(self: *Node, value: T) ?*Node {
@@ -126,158 +127,212 @@ fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) ty
         //         allocator.destroy(self);
         //     }
 
-            // ///Precondiitions and Rules:
-            //You can only rotate left on a node with a red right link
-            // //Rotating left on the root node makes the child node the new root
-            // fn rotate_left(node: *Node) void {
-            //     assert(node.right.?.colour == .Red);
+        // ///Precondiitions and Rules:
+        //You can only rotate left on a node with a red right link
+        // //Rotating left on the root node makes the child node the new root
+        fn rotate_left(node: *Node) void {
+            _ = node;
+            @panic("rotate_right called");
+        }
+        // {
+        //     assert(node.right.?.colour == .Red);
 
-            //     const right_child = node.right orelse @panic("No right child to rotate on\n");
+        //     const right_child = node.right orelse @panic("No right child to rotate on\n");
 
-            //     if (node.parent) |parent| {
-            //         right_child.parent = parent;
-            //         switch (node.parent_direction) {
-            //             .Right => {
-            //                 assert(parent.right == node);
-            //                 parent.right = right_child;
-            //             },
-            //             .Left => {
-            //                 assert(parent.left == node);
-            //                 parent.left = right_child;
-            //             },
-            //             else => @panic("The root node cannot have a parent\n"),
-            //         }
-            //     } else {
-            //         assert(node.parent_direction == .Root);
-            //         assert(node.parent == null);
-            //     }
+        //     if (node.parent) |parent| {
+        //         right_child.parent = parent;
+        //         switch (node.parent_direction) {
+        //             .Right => {
+        //                 assert(parent.right == node);
+        //                 parent.right = right_child;
+        //             },
+        //             .Left => {
+        //                 assert(parent.left == node);
+        //                 parent.left = right_child;
+        //             },
+        //             else => @panic("The root node cannot have a parent\n"),
+        //         }
+        //     } else {
+        //         assert(node.parent_direction == .Root);
+        //         assert(node.parent == null);
+        //     }
 
-            //     right_child.parent_direction = node.parent_direction; //Setting this outside means that even setting new root nodes will be covered
-            //     right_child.parent = node.parent;
+        //     right_child.parent_direction = node.parent_direction; //Setting this outside means that even setting new root nodes will be covered
+        //     right_child.parent = node.parent;
 
-                if (right_child.left) |child_left| {
-                    node.right = child_left;
-                    child_left.parent = node;
-                    child_left.parent_direction = .Right;
-                } else {
-                    node.right = null;
+        //     if (right_child.left) |child_left| {
+        //         node.right = child_left;
+        //         child_left.parent = node;
+        //         child_left.parent_direction = .Right;
+        //     } else {
+        //         node.right = null;
+        //     }
+
+        //     right_child.left = node;
+        //     node.parent = right_child;
+        //     node.parent_direction = .Left;
+        //     node.colour = .Red;
+        //     right_child.colour = .Black;
+        // }
+
+        ///Preconditions and Rules:
+        /// You can only rotate right on a node with a red left link
+        /// Rotating right on the root node makes the child node the new root
+
+        // Rotate right at node [30] to fix Red-Red left link: [30] -> [20] -> [10]
+        //
+        // BEFORE: Double Red Violation at [30]
+        //
+        //             [30] (B)
+        //            /        \
+        //           /          \      <- Links from [30]
+        //          /            \
+        //       [20] (R)        [40] (B)
+        //      /        \
+        //    /          \      <- Links from [20]
+        //    /            \
+        // [10] (R)        [25] (B)
+        //
+        // AFTER: Structure & Color Adjusted
+        //
+        //              [20] (B)   <- [20] moved up, became Black
+        //             /        \
+        //           /           \     <- Link [20] -> [10] stayed Red.
+        //           /            \     <- Link [20] -> [30] became Red!
+        //        [10] (R)        [30] (R)
+        //                       /         \
+        //                      /           \     <- Links from [30]
+        //                     /             \
+        //                   [25] (B)      [40] (B) <- [25] moved. [40] stayed.
+
+        fn rotate_right(nodes: *NodeList, node_idx: u32) void {
+            const node = access(node_idx, nodes);
+
+            assert(node.left_idx != NULL_IDX);
+            const left_child = access(node.left_idx, nodes);
+
+            assert(left_child.colour == .Red);
+
+            if (node.parent_idx != NULL_IDX) {
+                const parent = access(node.parent_idx, nodes);
+                switch (node.parent_direction) {
+                    .Left => {
+                        assert(parent.left_idx == node_idx);
+                        parent.left_idx = node.left_idx;
+                    },
+                    .Right => {
+                        assert(parent.right_idx == node_idx);
+                        parent.right_idx = node.left_idx;
+                    },
+                    else => @panic("The root node cannot have a parent"),
                 }
+            }
+            left_child.parent_idx = node.parent_idx;
+            left_child.parent_direction = node.parent_direction;
 
-                right_child.left = node;
-                node.parent = right_child;
-                node.parent_direction = .Left;
-                node.colour = .Red;
-                right_child.colour = .Black;
+            node.parent_idx = node.left_idx;
+            if (left_child.right_idx != NULL_IDX) {
+                const right_child = access(left_child.right_idx, nodes);
+                node.left_idx = left_child.right_idx;
+                right_child.parent_idx = node_idx;
+                right_child.parent_direction = .Left;
+            } else {
+                node.left_idx = NULL_IDX;
             }
 
-            ///Precondiitions and Rules:
-            //You can only rotate right on a node with a red left link
-            //Rotating right on the root node makes the child node the new root
-            fn rotate_right(node: *Node) void {
-                assert(node.left.?.colour == .Red);
+            left_child.right_idx = node_idx;
+            node.parent_direction = .Right;
+            node.colour = .Red;
+            left_child.colour = .Black;
+            // std.debug.print("So far: {}\nOriginal grandparent for balancing:{}", .{ nodes, node });
+        }
 
-                const left_child = node.left orelse @panic("No left child to rotate on\n");
+        fn balance_tree(nodes: *NodeList, node_idx: u32) u32 {
+            assert(node_idx != NULL_IDX);
+            const node = access(node_idx, nodes);
 
-                if (node.parent) |parent| {
-                    switch (node.parent_direction) {
-                        .Left => {
-                            assert(parent.left == node);
-                            parent.left = left_child;
-                        },
-                        .Right => {
-                            assert(parent.right == node);
-                            parent.right = left_child;
-                        },
-                        else => @panic("The root node cannot have a parent"),
-                    }
-                }
-                left_child.parent = node.parent;
-                left_child.parent_direction = node.parent_direction;
+            // std.debug.print("\nNodes:{}\nNode:{}", .{ access(node_idx, nodes), node });
 
-                if (left_child.right) |child_right| {
-                    node.left = child_right;
-                    child_right.parent = node;
-                    child_right.parent_direction = .Left;
-                } else {
-                    node.left = null;
-                }
-
-                left_child.right = node;
-                node.parent = left_child;
-                node.parent_direction = .Right;
-                node.colour = .Red;
-                left_child.colour = .Black;
+            if (node.parent_direction == .Root) {
+                return node_idx;
             }
 
-            fn balance_tree(node: *Node) *Node {
-                if (node.parent_direction == .Root) {
-                    return node;
-                }
+            if (node.parent_idx == NULL_IDX) @panic("Cannot balance the root node"); //The previous check should stop this from being triggered
 
-                const parent = node.parent orelse @panic("No parent node for the child"); //The previous check should stop this from being triggered
-                assert(node.parent_direction != .Root);
+            const parent = access(node.parent_idx, nodes);
+            const parent_idx = node.parent_idx;
 
-                if (node.colour == .Black) {
-                    return balance_tree(parent);
-                }
+            if (node.colour == .Black) { //A black node indicates that this node has been fully balanced
+                return balance_tree(nodes, node.parent_idx);
+            }
 
-                if (node.parent_direction == .Right) {
-                    flip_check: {
-                        assert(parent.right == node); //Something went very wrong to have this node's parent not point to it
+            if (node.parent_direction == .Right) {
+                flip_check: {
+                    assert(parent.right_idx == node_idx); //Something went very wrong to have this node's parent not point to it
+                    if (parent.left_idx == NULL_IDX) break :flip_check;
 
-                        const left = parent.left orelse {
-                            break :flip_check;
-                        };
-                        if (left.colour != .Red) break :flip_check;
-                        colour_flip(parent);
+                    const left = access(parent.left_idx, nodes);
 
-                        switch (parent.parent_direction) {
-                            .Root => {
-                                assert(parent.parent == null);
-                                parent.colour = .Black;
-                                return parent;
-                            },
-                            else => return balance_tree(parent),
-                        }
-                    }
-                    rotate_left(parent);
-                } else { //a left red child
-                    //Because of the earlier assertion, we are assured that the parent of this node is not the root node
-                    if (parent.colour == .Red) {
-                        assert(parent.parent != null); //We can't have a red node as the root of the tree
+                    if (left.colour != .Red) break :flip_check;
+                    colour_flip(parent, nodes, parent_idx);
 
-                        const grand_parent = parent.parent orelse @panic("Cannot have double red links without a grandparent\n");
-
-                        rotate_right(grand_parent);
-                        //After flipping, the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
-                        assert(grand_parent.parent == parent);
-                        colour_flip(parent); //Rotating a double-left always requires a subsequent colour flip
-
-                        if (parent.parent_direction == .Root) {
-                            assert(parent.parent == null);
+                    switch (parent.parent_direction) {
+                        .Root => {
+                            assert(parent.parent_idx == NULL_IDX);
                             parent.colour = .Black;
-                        }
+                            return parent_idx;
+                        },
+                        else => return balance_tree(nodes, parent_idx),
                     }
-                    // A left red link is perfectly fine. Ignore it
                 }
+                rotate_left(parent);
+            } else { //a left red child
+                //Because of the earlier assertion, we are assured that the parent of this node is not the root node
+                if (parent.colour == .Red) { //Double red left-links, we need to rotate
 
-                if (node.parent_direction == .Root) {
-                    assert(node.parent == null);
-                    return node;
+                    //This state should be impossible to reach, hence the assertion
+                    if (parent.parent_idx == NULL_IDX) @panic("Cannot have double red links without a grandparent\n");
+                    const grand_parent_idx = parent.parent_idx;
+
+                    rotate_right(nodes, grand_parent_idx);
+                    //After flipping, the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
+                    colour_flip(parent, nodes, node.parent_idx); //Rotating a double-left always requires a subsequent colour flip
+
+                    if (parent.parent_direction == .Root) {
+                        assert(parent.parent_idx == NULL_IDX);
+                        parent.colour = .Black;
+                    }
                 }
-                return balance_tree(parent);
+                // A left red link is perfectly fine otherwise. Ignore it
             }
 
-            fn colour_flip(node: *Node) void {
-                const left = node.left orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
-                const right = node.right orelse std.debug.panic("Can't flip without two children {}\n", .{node.value});
-
-                assert(left.colour == .Red and right.colour == .Red);
-
-                left.colour = .Black;
-                right.colour = .Black;
-                node.colour = .Red;
+            //Because of the above rotation operations, this node's position in the tree has shifted, necessitating this check
+            if (node.parent_direction == .Root) {
+                assert(node.parent_idx == NULL_IDX);
+                return node_idx;
             }
+            return balance_tree(nodes, node.parent_idx);
+        }
+
+        fn colour_flip(node: *Node, nodes: *NodeList, node_idx: u32) void {
+            if (node.left_idx == NULL_IDX or node.right_idx == NULL_IDX) {
+                std.debug.panic("Can't flip without two children.\nNodes:{}\t{}", .{ node.left_idx, node.right_idx });
+            }
+            assert(access(node_idx, nodes) == node);
+
+            const left = access(node.left_idx, nodes);
+            const right = access(node.right_idx, nodes);
+            assert(left.colour == .Red and right.colour == .Red);
+
+            left.colour = .Black;
+            right.colour = .Black;
+            node.colour = .Red;
+        }
+
+        //helper function because I can't keep typing the @as syntax over and over
+        fn access(index: u32, nodes: *NodeList) *Node {
+            return &nodes.items[index];
+        }
     };
 }
 

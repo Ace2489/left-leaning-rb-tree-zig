@@ -45,10 +45,14 @@ pub fn main() !void {
     std.debug.print("Tree size:{}\n", .{@sizeOf((Tree(u64, compare_fn)))});
     std.debug.print("Tree align:{}\n", .{@alignOf((Tree(u64, compare_fn)))});
 
-    var tree = try Tree(u64, compare_fn).init_with_capacity(allocator, capacity, 5);
+    var tree = try Tree(u64, compare_fn).init_with_capacity(allocator, capacity, 10);
+    tree.insert(5);
+    tree.insert(15);
+    tree.insert(3);
+    tree.insert(2);
     defer tree.deinit(allocator);
 
-    std.debug.print("Tree:{}\n", .{tree});
+    std.debug.print("\n\nTree:{}\n", .{tree});
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {
