@@ -1,55 +1,23 @@
 const std = @import("std");
 const Tree = @import("tree.zig").Tree;
-// const Tree = @import("tree.zig").Tree;
-
-const Colour = enum(u1) { Red, Black };
-const ParentDirection = enum(u2) {
-    Left,
-    Right,
-    Root, // This is the root node
-};
 
 pub fn main() !void {
-    // var debug = std.heap.DebugAllocator(.{}).init;
-    // const allocator = debug.allocator();
-    // defer _ = debug.deinit();
-
-    // var root = try Tree(u64, compare_fn).init(allocator, 5);
-    // defer root.deinit(allocator);
-
-    // std.debug.print("{}\n", .{@bitSizeOf(Tree(u64, compare_fn))});
-    // std.debug.print("{}\n", .{@bitSizeOf(@TypeOf(root.root.*))});
-    // var tree_root = try root.insert(allocator, 10) orelse @panic("");
-    // tree_root = try tree_root.insert(allocator, 12) orelse @panic("");
-    // tree_root = try tree_root.insert(allocator, 15) orelse @panic("");
-    // tree_root = try tree_root.insert(allocator, 11) orelse @panic("");
-    // tree_root = try tree_root.insert(allocator, 3) orelse @panic("");
-    // std.debug.print("\n\nOutput: {any}\n", .{tree_root});
-    // const Node = struct {
-    //     left: u32 = 0, //handles into an array vs pointers for increased cache locality, to represent a nullable handle, we use zero
-    //     right: u32 = 0,
-    //     parent: u32,
-    //     ///Note: When ParentDirection == .Root, the parent field is required to be null, any other thing implies a programmer error
-    //     value: u32,
-    //     colour: Colour = .Black,
-    //     parent_direction: ParentDirection,
-    // };
-
-    // std.debug.print("{}\n", .{@sizeOf(Node)});
-    // std.debug.print("{}\n", .{@alignOf(Node)});
     var debug = std.heap.DebugAllocator(.{}).init;
     const allocator = debug.allocator();
     defer _ = debug.deinit();
 
     const capacity: usize = 100;
-    std.debug.print("Tree size:{}\n", .{@sizeOf((Tree(u64, compare_fn)))});
-    std.debug.print("Tree align:{}\n", .{@alignOf((Tree(u64, compare_fn)))});
 
     var tree = try Tree(u64, compare_fn).init_with_capacity(allocator, capacity, 10);
-    tree.insert(5);
-    tree.insert(15);
+
     tree.insert(3);
     tree.insert(2);
+    tree.insert(7);
+    tree.insert(11);
+    tree.insert(23);
+    tree.insert(27);
+    tree.insert(6);
+
     defer tree.deinit(allocator);
 
     std.debug.print("\n\nTree:{}\n", .{tree});
