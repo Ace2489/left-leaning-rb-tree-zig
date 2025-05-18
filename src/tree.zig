@@ -35,7 +35,7 @@ pub fn Tree(T: type, compare_fn: fn (value: T, self_value: T) Order) type {
 
         pub fn insert(self: *Self, value: T) void {
             const idx = self.nodes.items[self.root_idx].insert(self.nodes, self.values, self.root_idx, value);
-            if (idx == NULL_IDX) return;
+            if (idx == NULL_IDX) return;git
             self.root_idx = idx;
         }
 
@@ -47,7 +47,8 @@ pub fn Tree(T: type, compare_fn: fn (value: T, self_value: T) Order) type {
         }
 
         pub fn search(self: *Self, value: T) ?*Node {
-            return self.root_idx.search(value);
+            var root = self.nodes.items[self.root_idx];
+            return root.search(self.nodes, self.values, value);
         }
     };
 }
@@ -115,19 +116,15 @@ fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) ty
             return balance_tree(nodes, child_index);
         }
 
-        //     pub fn search(self: *Node, value: T) ?*Node {
-        //         const compare = compare_fn(value, self.value_idx);
-        //         if (compare == .eq) return self;
-        //         const branch = if (compare == .lt) self.left_idx else self.right_idx;
-        //         if (branch) |child| return child.*.search(value);
-        //         return null;
-        //     }
+        pub fn search(self: *Node, nodes: *NodeList, values: *ValueList, value: T) ?*Node {
+            const compare = compare_fn(value, values.items[self.value_idx]);
+            if (compare == .eq) return self;
+            const branch_idx = if (compare == .lt) &self.left_idx else &self.right_idx;
 
-        //     pub fn deinit(self: *Node, allocator: Allocator) void {
-        //         if (self.left_idx) |left| left.deinit(allocator);
-        //         if (self.right_idx) |right| right.deinit(allocator);
-        //         allocator.destroy(self);
-        //     }
+            if (branch_idx.* == NULL_IDX) return null;
+            const child = &nodes.items[branch_idx.*];
+            return child.*.search(nodes, values, value);
+        }
 
         // ///Precondiitions and Rules:
         //You can only rotate left on a node with a red right link
@@ -381,13 +378,13 @@ pub fn main() !void {
 
     // --- Insertion Benchmark ---
     var timer = try Timer.start();
-    var rb_tree = try Tree(i32, compareInt).init(allocator, numbers_to_insert[0]);
+    var rb_tree = try Tree(i32, compareInt).init_with_capacity(allocator, @as(usize, num_elements_insert), numbers_to_insert[0]);
     defer rb_tree.deinit(allocator);
 
     for (numbers_to_insert[1..]) |value| {
         // The `insert` function can return `null` if value already exists or `!*Self` on error.
         // We'll assume for benchmark purposes that errors are fatal and duplicates are skipped.
-        _ = try rb_tree.insert(allocator, value);
+        rb_tree.insert(value);
     }
 
     const insert_time_ns = timer.lap();

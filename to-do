@@ -3,4 +3,4 @@
 -- automated tests for appropriate actions in balancing scenarios: right red links, double-left red links, red children
 -- automated tests to ensure LLRB constraints for all operations:
     - No right links, no double-left red links, and no red right and left children
-    - The BST property, and height adherence to O(Log n), as well as b-tree bijection
+    - The BST property, height adherence to O(Log n), as well as b-tree bijection

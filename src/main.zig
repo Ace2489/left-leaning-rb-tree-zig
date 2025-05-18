@@ -18,9 +18,10 @@ pub fn main() !void {
     tree.insert(27);
     tree.insert(6);
 
+    std.debug.print("Found:{any}\n", .{tree.search(27)});
     defer tree.deinit(allocator);
 
-    std.debug.print("\n\nTree:{}\n", .{tree});
+    std.debug.print("\n\nTree:{any}\n", .{tree.search(27)});
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {
