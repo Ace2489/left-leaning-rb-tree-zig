@@ -12,112 +12,212 @@ const ParentDirection = enum(u2) {
 
 //We use indexes instead of pointers to improve cache locality
 //Using the max value as a null index for the handles,
-const NULL_IDX: u32 = 0xFFFFFFFF;
+pub const NULL_IDX: u32 = 0xFFFFFFFF;
 
-pub fn Tree(T: type, compare_fn: fn (value: T, self_value: T) Order) type {
+pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key: K) Order) type {
     return struct {
-        const Node = node_gen(T, compare_fn);
-        const Nodes = std.ArrayListUnmanaged(Node);
-        const Values = std.ArrayListUnmanaged(T);
+        pub const KV = struct { key: K, value: V };
+        pub const Node = node_gen(K, compare_fn);
+        pub const Nodes = std.ArrayListUnmanaged(Node);
+        pub const KVList = std.MultiArrayList(KV); //Multiarraylist allows us to work with one without loading the other
         const Self = @This();
         root_idx: u32,
         nodes: *Nodes,
-        values: *Values,
+        kv_list: *KVList,
 
-        pub fn init_with_capacity(allocator: Allocator, capacity: usize, root: T) !Self {
+        pub const GetOrPutResult = struct {
+            key: K,
+            ///Null_idx if the key is not already present in the tree
+            ///Any other u32 otherwise
+            kv_index: u32,
+
+            ///The value which would be inserted into the tree if the update_value function were called
+            pending_value: V,
+
+            parent_idx: u32,
+            parent_branch_pointer: *u32,
+            parent_direction: u2,
+            kv_list: *KVList,
+            nodes: *Nodes,
+            tree: *Self,
+
+            ///Update the value, or create a new node if it doesn't exist
+            pub fn update_value(self: @This()) void {
+                const kv = KV{ .key = self.key, .value = self.pending_value };
+                if (self.kv_index != NULL_IDX) { //Just modify the value for that key
+                    assert(self.parent_direction == 2);
+                    assert(self.parent_branch_pointer.* == NULL_IDX);
+                    assert(self.parent_idx == NULL_IDX);
+                    self.kv_list.*.set(self.kv_index, kv);
+                    return;
+                }
+
+                //A new insertion
+                assert(self.parent_idx != NULL_IDX);
+                assert(self.parent_direction < 2);
+                assert(self.parent_branch_pointer.* == NULL_IDX);
+
+                self.kv_list.*.appendAssumeCapacity(kv);
+                const len_kv = self.kv_list.*.len;
+
+                assert(len_kv < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
+                const val_index: u32 = @truncate(len_kv - 1);
+
+                const child = Node{ .key_idx = val_index, .colour = .Red, .parent_idx = self.parent_idx, .parent_direction = @enumFromInt(self.parent_direction) };
+
+                self.nodes.*.appendAssumeCapacity(child);
+
+                const len_elements = self.nodes.*.items.len;
+                assert(len_elements < 0xFFFFFFFF);
+                const child_index: u32 = @truncate(len_elements - 1);
+
+                self.parent_branch_pointer.* = child_index;
+
+                const new_root_idx = Node.balance_tree(self.nodes, child_index);
+                self.tree.root_idx = new_root_idx;
+            }
+        };
+
+        pub fn init_with_capacity(allocator: Allocator, capacity: usize, root: KV) !Self {
             const nodes = try allocator.create(Nodes);
             nodes.* = try Nodes.initCapacity(allocator, capacity);
-            const values = try allocator.create(Values);
-            values.* = try Values.initCapacity(allocator, capacity);
+            const kv_list = try allocator.create(KVList);
+            kv_list.* = .empty;
+            try kv_list.*.setCapacity(allocator, capacity);
 
-            return Self{ .root_idx = Node.init(nodes, values, root), .nodes = nodes, .values = values };
+            kv_list.*.appendAssumeCapacity(root);
+            const len_kv = kv_list.*.len;
+
+            assert(len_kv < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
+            const val_index: u32 = @truncate(len_kv - 1);
+
+            const node = Node{ .parent_idx = NULL_IDX, .parent_direction = .Root, .colour = .Black, .key_idx = val_index };
+            nodes.*.appendAssumeCapacity(node);
+
+            const len_elements = nodes.*.items.len;
+            assert(len_elements < 0xFFFFFFFF);
+            const elem_index: u32 = @truncate(len_elements - 1);
+
+            return Self{ .root_idx = elem_index, .nodes = nodes, .kv_list = kv_list };
         }
 
-        pub fn insert(self: *Self, value: T) void {
-            const idx = self.nodes.items[self.root_idx].insert(self.nodes, self.values, self.root_idx, value);
-            if (idx == NULL_IDX) return;git
-            self.root_idx = idx;
+        pub fn getOrPutAssumeCapacity(self: *Self, kv: KV) GetOrPutResult {
+            assert(self.nodes.items.len < self.nodes.capacity);
+            assert(self.kv_list.len < self.kv_list.capacity);
+            const keys = self.kv_list.items(.key);
+            var root = &self.nodes.items[self.root_idx];
+            const res = root.getParentForPut(self.nodes, keys, self.root_idx, kv.key);
+            if (res.found_existing) {
+                assert(res.parent_idx == NULL_IDX);
+                assert(res.parent_branch_pointer.* == NULL_IDX);
+                assert(res.parent_direction == 2); //invalid direction
+                const result: GetOrPutResult = .{
+                    .kv_index = res.key_idx,
+                    .pending_value = kv.value,
+                    .parent_idx = res.parent_idx,
+                    .parent_branch_pointer = res.parent_branch_pointer,
+                    .parent_direction = res.parent_direction,
+                    .kv_list = self.kv_list,
+                    .nodes = self.nodes,
+                    .key = kv.key,
+                    .tree = self,
+                };
+                return result;
+            }
+            assert(res.parent_idx != NULL_IDX);
+            assert(res.parent_branch_pointer.* == NULL_IDX);
+            assert(res.parent_direction < 2);
+            assert(res.key_idx == NULL_IDX);
+
+            return .{
+                .kv_index = res.key_idx,
+                .pending_value = kv.value,
+                .parent_idx = res.parent_idx,
+                .parent_branch_pointer = res.parent_branch_pointer,
+                .parent_direction = res.parent_direction,
+                .kv_list = self.kv_list,
+                .nodes = self.nodes,
+                .key = kv.key,
+                .tree = self,
+            };
         }
+
+        // pub fn put(self: *Self, key: K, value: V) void {
+        // }
 
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.nodes.deinit(allocator);
-            self.values.deinit(allocator);
+            self.kv_list.deinit(allocator);
             allocator.destroy(self.nodes);
-            allocator.destroy(self.values);
+            allocator.destroy(self.kv_list);
         }
 
-        pub fn search(self: *Self, value: T) ?*Node {
+        pub fn search(self: *Self, key: K) ?*Node {
             var root = self.nodes.items[self.root_idx];
-            return root.search(self.nodes, self.values, value);
+            return root.search(self.nodes, self.kv_list, key);
         }
     };
 }
 
-fn node_gen(T: type, comptime compare_fn: fn (value: T, self_value: T) Order) type {
+/// Note: Could the logic about the keys be moved out of the node somehow? Perhaps some more efficiency could be netted by taking it to the tree
+fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) type {
     return struct {
         const Node = @This();
         const NodeList = std.ArrayListUnmanaged(Node);
-        const ValueList = std.ArrayListUnmanaged(T);
-        left_idx: u32 = NULL_IDX, //handles into an array for increased cache locality, to represent a null handle
+        const Keys = []K;
+        left_idx: u32 = NULL_IDX, //handles into an array for increased cache locality, use NULL_IDX to represent a null handle
         right_idx: u32 = NULL_IDX,
         parent_idx: u32,
         ///Note: When ParentDirection == .Root, the parent field is required to be null, any other thing implies a programmer error
         parent_direction: ParentDirection,
         colour: Colour = .Black,
-        value_idx: u32, //index to the array of values
+        key_idx: u32, //index to the array of keys
 
-        pub fn init(elements: *NodeList, values: *ValueList, value: T) u32 {
-            values.*.appendAssumeCapacity(value);
-            const len_values = values.*.items.len;
+        // pub fn init(nodes: *NodeList, keys: *Keys, value: K) u32 {
+        //     // keys.*.appendAssumeCapacity(value);
+        //     // const len_values = keys.*.items.len;
 
-            assert(len_values < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
-            const val_index: u32 = @truncate(len_values - 1);
+        //     // assert(len_values < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
+        //     // const val_index: u32 = @truncate(len_values - 1);
 
-            const node = Node{ .parent_idx = NULL_IDX, .parent_direction = .Root, .colour = .Black, .value_idx = val_index };
-            elements.*.appendAssumeCapacity(node);
+        //     // const node = Node{ .parent_idx = NULL_IDX, .parent_direction = .Root, .colour = .Black, .key_idx = val_index };
+        //     // nodes.*.appendAssumeCapacity(node);
 
-            const len_elements = elements.*.items.len;
-            assert(len_elements < 0xFFFFFFFF);
-            const elem_index: u32 = @truncate(len_elements - 1);
+        //     // const len_elements = nodes.*.items.len;
+        //     // assert(len_elements < 0xFFFFFFFF);
+        //     // const elem_index: u32 = @truncate(len_elements - 1);
 
-            return elem_index;
-        }
+        //     // return elem_index;
+        // }
 
-        pub fn insert(self: *Node, nodes: *NodeList, values: *ValueList, self_idx: u32, value: T) u32 {
-            const compare: Order = compare_fn(value, values.items[self.value_idx]);
+        ///Gets the would-be parent of a new key insert, or the index of the value if the key already exists
+        pub fn getParentForPut(self: *Node, nodes: *NodeList, keys: Keys, self_idx: u32, key: K) struct { parent_branch_pointer: *u32, parent_idx: u32, key_idx: u32, parent_direction: u2, found_existing: bool } {
+            const compare: Order = compare_fn(key, keys[self.key_idx]);
 
             const branch_idx: *u32, const direction: u1 = switch (compare) {
-                .eq => return NULL_IDX,
+                .eq => return .{
+                    .key_idx = self.key_idx,
+                    .parent_idx = NULL_IDX,
+                    .parent_direction = 2, //The direction is invalid in this case, set to a wrong value to break attempts to enumCast it
+                    .parent_branch_pointer = @constCast(&NULL_IDX),
+                    .found_existing = true,
+                },
                 .lt => .{ &self.left_idx, 0 },
                 .gt => .{ &self.right_idx, 1 },
             };
 
             //maybe address branch misses later
             if (branch_idx.* != NULL_IDX) {
-                return nodes.*.items[branch_idx.*].insert(nodes, values, branch_idx.*, value);
+                var node = nodes.*.items[branch_idx.*];
+                std.debug.print("Node type from list{}\n", .{@TypeOf(node)});
+                return node.getParentForPut(nodes, keys, branch_idx.*, key);
             }
 
-            values.*.appendAssumeCapacity(value);
-            const len_values = values.*.items.len;
-
-            assert(len_values < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
-            const val_index: u32 = @truncate(len_values - 1);
-
-            const child = Node{ .value_idx = val_index, .colour = .Red, .parent_idx = self_idx, .parent_direction = @enumFromInt(direction) };
-
-            nodes.*.appendAssumeCapacity(child);
-
-            const len_elements = nodes.*.items.len;
-            assert(len_elements < 0xFFFFFFFF);
-            const child_index: u32 = @truncate(len_elements - 1);
-
-            branch_idx.* = child_index;
-
-            return balance_tree(nodes, child_index);
+            return .{ .key_idx = NULL_IDX, .parent_idx = self_idx, .parent_direction = direction, .parent_branch_pointer = branch_idx, .found_existing = false };
         }
 
-        pub fn search(self: *Node, nodes: *NodeList, values: *ValueList, value: T) ?*Node {
-            const compare = compare_fn(value, values.items[self.value_idx]);
+        pub fn search(self: *Node, nodes: *NodeList, values: *Keys, value: K) ?*Node {
+            const compare = compare_fn(value, values.items[self.key_idx]);
             if (compare == .eq) return self;
             const branch_idx = if (compare == .lt) &self.left_idx else &self.right_idx;
 
