@@ -187,6 +187,7 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
         }
 
         pub fn search(self: *Self, key: K) ?V {
+            if (self.root_idx == NULL_IDX) return null; // No nodes in the tree
             var root = self.nodes.items[self.root_idx];
             const idx = root.search(&self.nodes, self.kv_list.items(.key), key);
 
