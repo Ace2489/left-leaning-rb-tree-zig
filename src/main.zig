@@ -29,6 +29,8 @@ pub fn main() !void {
     std.debug.print("Tree: {}\n\n", .{tree});
     std.debug.print("KV list keys:{s}\n", .{tree.kv_list.items(.key)});
     std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
+
+    std.debug.print("Search:{any}\n", .{tree.search("rooney")});
 }
 
 fn compare_fn(a: []const u8, b: []const u8) std.math.Order {

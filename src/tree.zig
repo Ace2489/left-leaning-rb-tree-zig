@@ -176,11 +176,6 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
         }
 
         pub fn getOrPut(self: *Self, allocator: Allocator, kv: KV) !GetOrPutResult {
-            // if(self.nodes == undefined){
-            //     const nodes =  try allocator.create(Nodes);
-            //     nodes.* = try Nodes.init
-            //     self.nodes = nodes.*;
-            // }
             try self.nodes.ensureUnusedCapacity(allocator, 1);
             try self.kv_list.ensureUnusedCapacity(allocator, 1);
             return getOrPutAssumeCapacity(self, kv);
@@ -191,9 +186,12 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             self.kv_list.deinit(allocator);
         }
 
-        pub fn search(self: *Self, key: K) ?*Node {
+        pub fn search(self: *Self, key: K) ?V {
             var root = self.nodes.items[self.root_idx];
-            return root.search(self.nodes, self.kv_list, key);
+            const idx = root.search(&self.nodes, self.kv_list.items(.key), key);
+
+            if (idx == NULL_IDX) return null;
+            return self.kv_list.get(idx).value;
         }
     };
 }
@@ -255,14 +253,14 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
             return .{ .key_idx = NULL_IDX, .parent_idx = self_idx, .parent_direction = direction, .parent_branch_pointer = branch_idx, .found_existing = false };
         }
 
-        pub fn search(self: *Node, nodes: *NodeList, values: *Keys, value: K) ?*Node {
-            const compare = compare_fn(value, values.items[self.key_idx]);
-            if (compare == .eq) return self;
+        pub fn search(self: *Node, nodes: *const NodeList, keys: Keys, value: K) u32 {
+            const compare = compare_fn(value, keys[self.key_idx]);
+            if (compare == .eq) return self.key_idx;
             const branch_idx = if (compare == .lt) &self.left_idx else &self.right_idx;
 
-            if (branch_idx.* == NULL_IDX) return null;
+            if (branch_idx.* == NULL_IDX) return NULL_IDX;
             const child = &nodes.items[branch_idx.*];
-            return child.*.search(nodes, values, value);
+            return child.*.search(nodes, keys, value);
         }
 
         // ///Precondiitions and Rules:
