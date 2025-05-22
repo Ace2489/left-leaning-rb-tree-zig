@@ -22,8 +22,14 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
         pub const KVList = std.MultiArrayList(KV); //Multiarraylist allows us to work with one without loading the other
         const Self = @This();
         root_idx: u32,
-        nodes: *Nodes,
-        kv_list: *KVList,
+        nodes: Nodes,
+        kv_list: KVList,
+
+        pub const empty: Self = .{
+            .root_idx = NULL_IDX,
+            .nodes = .empty,
+            .kv_list = .empty,
+        };
 
         pub const GetOrPutResult = struct {
             key: K,
@@ -106,11 +112,9 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
         };
 
         pub fn init_with_capacity(allocator: Allocator, capacity: usize) !Self {
-            const nodes = try allocator.create(Nodes);
-            nodes.* = try Nodes.initCapacity(allocator, capacity);
-            const kv_list = try allocator.create(KVList);
-            kv_list.* = .empty;
-            try kv_list.*.setCapacity(allocator, capacity);
+            const nodes = try Nodes.initCapacity(allocator, capacity);
+            var kv_list = KVList.empty;
+            try kv_list.setCapacity(allocator, capacity);
 
             return Self{ .root_idx = NULL_IDX, .nodes = nodes, .kv_list = kv_list };
         }
@@ -119,7 +123,6 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             assert(self.nodes.items.len < self.nodes.capacity);
             assert(self.kv_list.len < self.kv_list.capacity);
             const keys = self.kv_list.items(.key);
-
             if (self.root_idx == NULL_IDX) { //No root node yet, let's set this to the root
 
                 return .{
@@ -129,26 +132,26 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
                     .parent_idx = NULL_IDX,
                     .parent_branch_pointer = @constCast(&NULL_IDX),
                     .parent_direction = 2,
-                    .kv_list = self.kv_list,
-                    .nodes = self.nodes,
+                    .kv_list = &self.kv_list,
+                    .nodes = &self.nodes,
                     .tree = self,
                 };
             }
             var root = &self.nodes.items[self.root_idx];
-            const res = root.getParentForPut(self.nodes, keys, self.root_idx, kv.key);
+            const res = root.getParentForPut(&self.nodes, keys, self.root_idx, kv.key);
 
             if (res.found_existing) {
                 assert(res.parent_idx == NULL_IDX);
                 assert(res.parent_branch_pointer.* == NULL_IDX);
-                assert(res.parent_direction == 2); //invalid direction
+                assert(res.parent_direction == 3); //invalid direction
                 const result: GetOrPutResult = .{
                     .kv_index = res.key_idx,
                     .pending_value = kv.value,
                     .parent_idx = res.parent_idx,
                     .parent_branch_pointer = res.parent_branch_pointer,
                     .parent_direction = res.parent_direction,
-                    .kv_list = self.kv_list,
-                    .nodes = self.nodes,
+                    .kv_list = &self.kv_list,
+                    .nodes = &self.nodes,
                     .key = kv.key,
                     .tree = self,
                 };
@@ -165,21 +168,27 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
                 .parent_idx = res.parent_idx,
                 .parent_branch_pointer = res.parent_branch_pointer,
                 .parent_direction = res.parent_direction,
-                .kv_list = self.kv_list,
-                .nodes = self.nodes,
+                .kv_list = &self.kv_list,
+                .nodes = &self.nodes,
                 .key = kv.key,
                 .tree = self,
             };
         }
 
-        // pub fn put(self: *Self, key: K, value: V) void {
-        // }
+        pub fn getOrPut(self: *Self, allocator: Allocator, kv: KV) !GetOrPutResult {
+            // if(self.nodes == undefined){
+            //     const nodes =  try allocator.create(Nodes);
+            //     nodes.* = try Nodes.init
+            //     self.nodes = nodes.*;
+            // }
+            try self.nodes.ensureUnusedCapacity(allocator, 1);
+            try self.kv_list.ensureUnusedCapacity(allocator, 1);
+            return getOrPutAssumeCapacity(self, kv);
+        }
 
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.nodes.deinit(allocator);
             self.kv_list.deinit(allocator);
-            allocator.destroy(self.nodes);
-            allocator.destroy(self.kv_list);
         }
 
         pub fn search(self: *Self, key: K) ?*Node {
@@ -221,7 +230,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
         // }
 
         ///Gets the would-be parent of a new key insert, or the index of the value if the key already exists
-        pub fn getParentForPut(self: *Node, nodes: *NodeList, keys: Keys, self_idx: u32, key: K) struct { parent_branch_pointer: *u32, parent_idx: u32, key_idx: u32, parent_direction: u2, found_existing: bool } {
+        pub fn getParentForPut(self: *Node, nodes: *const NodeList, keys: Keys, self_idx: u32, key: K) struct { parent_branch_pointer: *u32, parent_idx: u32, key_idx: u32, parent_direction: u2, found_existing: bool } {
             const compare: Order = compare_fn(key, keys[self.key_idx]);
 
             const branch_idx: *u32, const direction: u1 = switch (compare) {

@@ -38,7 +38,7 @@ fn compare_fn(a: []const u8, b: []const u8) std.math.Order {
     // if (a < b) return .lt;
     // return .gt;
 
-    return .gt;
+    return .eq;
 }
 
 // test "verify tree structure after insertions" {
