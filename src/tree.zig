@@ -45,10 +45,37 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             pub fn update_value(self: @This()) void {
                 const kv = KV{ .key = self.key, .value = self.pending_value };
                 if (self.kv_index != NULL_IDX) { //Just modify the value for that key
-                    assert(self.parent_direction == 2);
+                    assert(self.parent_direction == 3);
                     assert(self.parent_branch_pointer.* == NULL_IDX);
                     assert(self.parent_idx == NULL_IDX);
                     self.kv_list.*.set(self.kv_index, kv);
+                    return;
+                }
+
+                if (self.tree.root_idx == NULL_IDX) { //No root node yet, let's set this to the root
+                    assert(self.parent_idx == NULL_IDX);
+                    assert(self.parent_direction == 2);
+                    assert(self.parent_branch_pointer.* == NULL_IDX);
+
+                    self.kv_list.*.appendAssumeCapacity(kv);
+                    const len_kv = self.kv_list.*.len;
+
+                    assert(len_kv < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
+                    const val_index: u32 = @truncate(len_kv - 1);
+
+                    const node = Node{
+                        .parent_idx = self.parent_idx,
+                        .parent_direction = @enumFromInt(self.parent_direction),
+                        .colour = .Black,
+                        .key_idx = val_index,
+                    };
+
+                    self.nodes.*.appendAssumeCapacity(node);
+
+                    const len_elements = self.nodes.*.items.len;
+                    assert(len_elements < 0xFFFFFFFF);
+                    const root_index: u32 = @truncate(len_elements - 1);
+                    self.tree.root_idx = root_index;
                     return;
                 }
 
@@ -78,35 +105,38 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             }
         };
 
-        pub fn init_with_capacity(allocator: Allocator, capacity: usize, root: KV) !Self {
+        pub fn init_with_capacity(allocator: Allocator, capacity: usize) !Self {
             const nodes = try allocator.create(Nodes);
             nodes.* = try Nodes.initCapacity(allocator, capacity);
             const kv_list = try allocator.create(KVList);
             kv_list.* = .empty;
             try kv_list.*.setCapacity(allocator, capacity);
 
-            kv_list.*.appendAssumeCapacity(root);
-            const len_kv = kv_list.*.len;
-
-            assert(len_kv < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
-            const val_index: u32 = @truncate(len_kv - 1);
-
-            const node = Node{ .parent_idx = NULL_IDX, .parent_direction = .Root, .colour = .Black, .key_idx = val_index };
-            nodes.*.appendAssumeCapacity(node);
-
-            const len_elements = nodes.*.items.len;
-            assert(len_elements < 0xFFFFFFFF);
-            const elem_index: u32 = @truncate(len_elements - 1);
-
-            return Self{ .root_idx = elem_index, .nodes = nodes, .kv_list = kv_list };
+            return Self{ .root_idx = NULL_IDX, .nodes = nodes, .kv_list = kv_list };
         }
 
         pub fn getOrPutAssumeCapacity(self: *Self, kv: KV) GetOrPutResult {
             assert(self.nodes.items.len < self.nodes.capacity);
             assert(self.kv_list.len < self.kv_list.capacity);
             const keys = self.kv_list.items(.key);
+
+            if (self.root_idx == NULL_IDX) { //No root node yet, let's set this to the root
+
+                return .{
+                    .key = kv.key,
+                    .kv_index = NULL_IDX,
+                    .pending_value = kv.value,
+                    .parent_idx = NULL_IDX,
+                    .parent_branch_pointer = @constCast(&NULL_IDX),
+                    .parent_direction = 2,
+                    .kv_list = self.kv_list,
+                    .nodes = self.nodes,
+                    .tree = self,
+                };
+            }
             var root = &self.nodes.items[self.root_idx];
             const res = root.getParentForPut(self.nodes, keys, self.root_idx, kv.key);
+
             if (res.found_existing) {
                 assert(res.parent_idx == NULL_IDX);
                 assert(res.parent_branch_pointer.* == NULL_IDX);
@@ -160,7 +190,7 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
 }
 
 /// Note: Could the logic about the keys be moved out of the node somehow? Perhaps some more efficiency could be netted by taking it to the tree
-fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) type {
+pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) type {
     return struct {
         const Node = @This();
         const NodeList = std.ArrayListUnmanaged(Node);
@@ -198,7 +228,7 @@ fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) ty
                 .eq => return .{
                     .key_idx = self.key_idx,
                     .parent_idx = NULL_IDX,
-                    .parent_direction = 2, //The direction is invalid in this case, set to a wrong value to break attempts to enumCast it
+                    .parent_direction = 3, //The direction is invalid in this case, set to a wrong value to break attempts to enumCast it
                     .parent_branch_pointer = @constCast(&NULL_IDX),
                     .found_existing = true,
                 },
@@ -229,7 +259,7 @@ fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) ty
         // ///Precondiitions and Rules:
         //You can only rotate left on a node with a red right link
         // //Rotating left on the root node makes the child node the new root
-        fn rotate_left(nodes: *NodeList, node_idx: u32) void {
+        pub fn rotate_left(nodes: *NodeList, node_idx: u32) void {
             const node = &nodes.items[node_idx];
 
             assert(node.right_idx != NULL_IDX);
@@ -307,7 +337,7 @@ fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) ty
         //                     /             \
         //                   [25] (B)      [40] (B) <- [25] moved. [40] stayed.
 
-        fn rotate_right(nodes: *NodeList, node_idx: u32) void {
+        pub fn rotate_right(nodes: *NodeList, node_idx: u32) void {
             const node = access(node_idx, nodes);
 
             assert(node.left_idx != NULL_IDX);
@@ -427,7 +457,7 @@ fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order) ty
         }
 
         //helper function because I can't keep typing the @as syntax over and over
-        fn access(index: u32, nodes: *NodeList) *Node {
+        pub fn access(index: u32, nodes: *NodeList) *Node {
             return &nodes.items[index];
         }
     };

@@ -8,9 +8,11 @@ pub fn main() !void {
 
     const capacity: usize = 100;
 
-    var tree = try Tree([]const u8, u64, compare_fn).init_with_capacity(allocator, capacity, .{ .key = "koon", .value = 24 });
+    var tree = try Tree([]const u8, u64, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
+    const res = tree.getOrPutAssumeCapacity(.{ .key = "koon", .value = 24 });
+    res.update_value();
     const result = tree.getOrPutAssumeCapacity(.{ .key = "rooney", .value = 2500 });
     std.debug.print("getOrPutResult: {}\n", .{result});
     std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
@@ -35,7 +37,8 @@ fn compare_fn(a: []const u8, b: []const u8) std.math.Order {
     // if (a == b) return .eq;
     // if (a < b) return .lt;
     // return .gt;
-    return .lt;
+
+    return .gt;
 }
 
 // test "verify tree structure after insertions" {
