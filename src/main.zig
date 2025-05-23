@@ -1,6 +1,7 @@
 const std = @import("std");
 const Tree = @import("tree.zig").Tree;
 
+const Data = struct { num: u128 };
 pub fn main() !void {
     var debug = std.heap.DebugAllocator(.{}).init;
     const allocator = debug.allocator();
@@ -8,21 +9,22 @@ pub fn main() !void {
 
     const capacity: usize = 1000;
 
-    var tree = try Tree(u64, u64, compare_fn).init_with_capacity(allocator, capacity);
+    var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
-    const res = tree.getOrPutAssumeCapacity(.{ .key = 999, .value = 24 });
+    const res = tree.getOrPutAssumeCapacity(.{ .key = 999, .value = .{ .num = 999 } });
     res.update_value();
 
-    for (0..1000) |i| {
+    for (0..999) |i| {
         std.debug.print("iteration: {}\n", .{i});
 
-        const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = 2500 });
+        const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i } });
         // std.debug.print("getOrPutResult: {}\n", .{result});
         // std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
 
         result.update_value();
     }
+
     // tree.insert(3);
     // tree.insert(2);
     // tree.insert(7);
@@ -34,7 +36,9 @@ pub fn main() !void {
     // std.debug.print("Tree: {}\n\n", .{tree});
     // std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
     // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
-
+    std.debug.print("Search:{any}\n", .{tree.search(20)});
+    _ = tree.update(.{ .key = 20, .value = .{ .num = 4500 } });
+    std.debug.print("Search:{any}\n", .{tree.search(20)});
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {

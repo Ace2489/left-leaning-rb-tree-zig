@@ -180,6 +180,45 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             return getOrPutAssumeCapacity(self, kv);
         }
 
+        pub fn update(self: *Self, modifications: anytype) ?V {
+            if (!@hasField(@TypeOf(modifications), "key")) return; //No key in the details, we can't find an entry to modify
+            const val_idx = self.getValueIdx(modifications.key);
+            if (val_idx == NULL_IDX) return null;
+            //No value found for the key
+
+            var value_for_modification = self.kv_list.get(val_idx);
+
+            const info = @typeInfo(@TypeOf(modifications.value));
+
+            if (!(info == .@"struct")) {
+                value_for_modification.value = modifications.value;
+            } else {
+                inline for (info.@"struct".fields) |field| {
+                    if (!@hasField(V, field.name)) {
+                        return null;
+                    }
+                    @field(value_for_modification.value, field.name) = @field(modifications.value, field.name);
+                }
+            }
+
+            self.kv_list.set(val_idx, .{ .key = modifications.key, .value = value_for_modification.value });
+            return value_for_modification.value;
+        }
+
+        ///Note: When using this method, it is your responsibility to make sure that all modifications to the value are coherent with the structure of the other values
+        ///
+        /// E.g making sure that the re-assigned value has all of the fields of the old value
+        ///
+        /// Failure to do this will result in an inconsistent tree structure.
+        ///Gets a index to the value in the tree for the given key.
+        pub fn getValueIdx(self: *Self, key: K) u32 {
+            if (self.root_idx == NULL_IDX) return NULL_IDX; // No nodes in the tree
+            var root = self.nodes.items[self.root_idx];
+            const idx = root.search(&self.nodes, self.kv_list.items(.key), key);
+
+            if (idx == NULL_IDX) return NULL_IDX;
+            return idx;
+        }
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.nodes.deinit(allocator);
             self.kv_list.deinit(allocator);
