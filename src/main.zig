@@ -6,18 +6,23 @@ pub fn main() !void {
     const allocator = debug.allocator();
     defer _ = debug.deinit();
 
-    const capacity: usize = 100;
+    const capacity: usize = 1000;
 
-    var tree = try Tree([]const u8, u64, compare_fn).init_with_capacity(allocator, capacity);
+    var tree = try Tree(u64, u64, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
-    const res = tree.getOrPutAssumeCapacity(.{ .key = "koon", .value = 24 });
+    const res = tree.getOrPutAssumeCapacity(.{ .key = 999, .value = 24 });
     res.update_value();
-    const result = tree.getOrPutAssumeCapacity(.{ .key = "rooney", .value = 2500 });
-    std.debug.print("getOrPutResult: {}\n", .{result});
-    std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
 
-    result.update_value();
+    for (0..1000) |i| {
+        std.debug.print("iteration: {}\n", .{i});
+
+        const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = 2500 });
+        // std.debug.print("getOrPutResult: {}\n", .{result});
+        // std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
+
+        result.update_value();
+    }
     // tree.insert(3);
     // tree.insert(2);
     // tree.insert(7);
@@ -26,21 +31,14 @@ pub fn main() !void {
     // tree.insert(27);
     // tree.insert(6);
 
-    std.debug.print("Tree: {}\n\n", .{tree});
-    std.debug.print("KV list keys:{s}\n", .{tree.kv_list.items(.key)});
-    std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
+    // std.debug.print("Tree: {}\n\n", .{tree});
+    // std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
+    // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
 
-    std.debug.print("Search:{any}\n", .{tree.search("rooney")});
 }
 
-fn compare_fn(a: []const u8, b: []const u8) std.math.Order {
-    _ = a;
-    _ = b;
-    // if (a == b) return .eq;
-    // if (a < b) return .lt;
-    // return .gt;
-
-    return .eq;
+fn compare_fn(a: u64, b: u64) std.math.Order {
+    return std.math.order(a, b);
 }
 
 // test "verify tree structure after insertions" {

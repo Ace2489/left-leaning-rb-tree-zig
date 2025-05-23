@@ -124,7 +124,6 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             assert(self.kv_list.len < self.kv_list.capacity);
             const keys = self.kv_list.items(.key);
             if (self.root_idx == NULL_IDX) { //No root node yet, let's set this to the root
-
                 return .{
                     .key = kv.key,
                     .kv_index = NULL_IDX,
@@ -211,23 +210,6 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
         colour: Colour = .Black,
         key_idx: u32, //index to the array of keys
 
-        // pub fn init(nodes: *NodeList, keys: *Keys, value: K) u32 {
-        //     // keys.*.appendAssumeCapacity(value);
-        //     // const len_values = keys.*.items.len;
-
-        //     // assert(len_values < 0xFFFFFFFF); //We don't have enough bits for any indexes beyond this limit
-        //     // const val_index: u32 = @truncate(len_values - 1);
-
-        //     // const node = Node{ .parent_idx = NULL_IDX, .parent_direction = .Root, .colour = .Black, .key_idx = val_index };
-        //     // nodes.*.appendAssumeCapacity(node);
-
-        //     // const len_elements = nodes.*.items.len;
-        //     // assert(len_elements < 0xFFFFFFFF);
-        //     // const elem_index: u32 = @truncate(len_elements - 1);
-
-        //     // return elem_index;
-        // }
-
         ///Gets the would-be parent of a new key insert, or the index of the value if the key already exists
         pub fn getParentForPut(self: *Node, nodes: *const NodeList, keys: Keys, self_idx: u32, key: K) struct { parent_branch_pointer: *u32, parent_idx: u32, key_idx: u32, parent_direction: u2, found_existing: bool } {
             const compare: Order = compare_fn(key, keys[self.key_idx]);
@@ -246,8 +228,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
             //maybe address branch misses later
             if (branch_idx.* != NULL_IDX) {
-                var node = nodes.*.items[branch_idx.*];
-                std.debug.print("Node type from list{}\n", .{@TypeOf(node)});
+                var node = &nodes.*.items[branch_idx.*];
                 return node.getParentForPut(nodes, keys, branch_idx.*, key);
             }
 
