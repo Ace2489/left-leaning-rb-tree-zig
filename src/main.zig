@@ -12,18 +12,30 @@ pub fn main() !void {
     var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
-    const res = tree.getOrPutAssumeCapacity(.{ .key = 999, .value = .{ .num = 999 } });
+    var i: usize = 5;
+    while (i < 26) : (i += 5) {
+        var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = 999 } });
+        res.update_value();
+    }
+    var res = tree.getOrPutAssumeCapacity(.{ .key = 12, .value = .{ .num = 999 } });
     res.update_value();
 
-    for (0..999) |i| {
-        std.debug.print("iteration: {}\n", .{i});
+    var res2 = tree.getOrPutAssumeCapacity(.{ .key = 17, .value = .{ .num = 999 } });
+    res2.update_value();
 
-        const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i } });
-        // std.debug.print("getOrPutResult: {}\n", .{result});
-        // std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
+    // var res3 = tree.getOrPutAssumeCapacity(.{ .key = 3, .value = .{ .num = 999 } });
+    // res3.update_value();
 
-        result.update_value();
-    }
+    _ = tree.delete(17);
+    // for (0..999) |i| {
+    //     std.debug.print("iteration: {}\n", .{i});
+
+    //     const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i } });
+    //     // std.debug.print("getOrPutResult: {}\n", .{result});
+    //     // std.debug.print("getOrPutResult branch pointer: {}\n\n", .{result.parent_branch_pointer.*});
+
+    //     result.update_value();
+    // }
 
     // tree.insert(3);
     // tree.insert(2);
@@ -36,9 +48,9 @@ pub fn main() !void {
     // std.debug.print("Tree: {}\n\n", .{tree});
     // std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
     // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
-    std.debug.print("Search:{any}\n", .{tree.search(20)});
-    _ = tree.update(.{ .key = 20, .value = .{ .num = 4500 } });
-    std.debug.print("Search:{any}\n", .{tree.search(20)});
+    // // std.debug.print("Search:{any}\n", .{tree.search(20)});
+    // _ = tree.update(.{ .key = 20, .value = .{ .num = tree.search(20).?.num + 500 } });
+    // std.debug.print("Search:{any}\n", .{tree.search(20)});
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {

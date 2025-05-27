@@ -205,11 +205,30 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             return value_for_modification.value;
         }
 
+        pub fn delete(self: *Self, key: K) ?KV {
+            if (self.root_idx == NULL_IDX) return null; //No tree lol
+            var root = &self.nodes.items[self.root_idx];
+
+            const result = root.delete(&self.nodes, self.kv_list.items(.key), self.root_idx, key);
+
+            if (result.removed_idx == NULL_IDX) return null; //Element not found;
+
+            // If root_idx is NULL_IDX here, it means the tree is now empty.
+            // The previously non-null root was the only node and has been removed.
+            self.root_idx = result.root_idx;
+
+            const removed_node = self.nodes.swapRemove(result.removed_idx);
+            const removed_kv = self.kv_list.get(removed_node.key_idx);
+
+            self.kv_list.swapRemove(removed_node.key_idx);
+            return removed_kv;
+        }
+
         ///Note: When using this method, it is your responsibility to make sure that all modifications to the value are coherent with the structure of the other values
         ///
         /// E.g making sure that the re-assigned value has all of the fields of the old value
-        ///
         /// Failure to do this will result in an inconsistent tree structure.
+        ///
         ///Gets a index to the value in the tree for the given key.
         pub fn getValueIdx(self: *Self, key: K) u32 {
             if (self.root_idx == NULL_IDX) return NULL_IDX; // No nodes in the tree
@@ -240,7 +259,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
     return struct {
         const Node = @This();
         const NodeList = std.ArrayListUnmanaged(Node);
-        const Keys = []K;
+        const Keys = []const K;
         left_idx: u32 = NULL_IDX, //handles into an array for increased cache locality, use NULL_IDX to represent a null handle
         right_idx: u32 = NULL_IDX,
         parent_idx: u32,
@@ -274,27 +293,139 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
             return .{ .key_idx = NULL_IDX, .parent_idx = self_idx, .parent_direction = direction, .parent_branch_pointer = branch_idx, .found_existing = false };
         }
 
-        pub fn search(self: *Node, nodes: *const NodeList, keys: Keys, value: K) u32 {
-            const compare = compare_fn(value, keys[self.key_idx]);
+        pub fn search(self: *Node, nodes: *const NodeList, keys: Keys, key: K) u32 {
+            const compare = compare_fn(key, keys[self.key_idx]);
             if (compare == .eq) return self.key_idx;
             const branch_idx = if (compare == .lt) &self.left_idx else &self.right_idx;
 
             if (branch_idx.* == NULL_IDX) return NULL_IDX;
             const child = &nodes.items[branch_idx.*];
-            return child.*.search(nodes, keys, value);
+            return child.*.search(nodes, keys, key);
         }
 
-        // ///Precondiitions and Rules:
+        pub fn delete(self: *Node, nodes: *NodeList, keys: Keys, self_idx: u32, key: K) struct { root_idx: u32, removed_idx: u32 } {
+            const compare = compare_fn(key, keys[self.key_idx]);
+            std.debug.print("Comp result: {}\n", .{compare});
+            if (compare == .lt) {
+                if (self.left_idx == NULL_IDX) return .{ .root_idx = NULL_IDX, .removed_idx = NULL_IDX };
+                var call_move_left_red = false;
+
+                //if left is black and left.left is black
+                var left = &nodes.items[self.left_idx];
+                blk: {
+                    if (left.colour != .Black) break :blk;
+                    if (left.left_idx == NULL_IDX) {
+                        call_move_left_red = true;
+                        break :blk;
+                    }
+                    const left_left = nodes.items[left.left_idx];
+                    if (left_left.colour != .Black) break :blk;
+                    call_move_left_red = true;
+                }
+                std.debug.print("\n\nTree state before calling move left: {}\n.Keys:{any}\n", .{ nodes, keys });
+                if (call_move_left_red) self.move_left_red(nodes, self_idx);
+                return left.delete(nodes, keys, self.left_idx, key);
+            } else {
+                std.debug.print("\n\nTree state before calling eql and gt: {}\n.Keys:{any}\n", .{ nodes, keys });
+                if (self.left_idx != NULL_IDX) {
+                    const left = nodes.items[self.left_idx];
+                    if (left.colour == .Red) {
+                        rotate_right(nodes, self_idx, false);
+                    }
+                }
+
+                if (compare == .eq and self.right_idx == NULL_IDX) {
+                    if (self.parent_idx == NULL_IDX) return .{ .root_idx = NULL_IDX, .removed_idx = self_idx };
+                    const parent = &nodes.items[self.parent_idx];
+                    const branch_ptr = switch (self.parent_direction) {
+                        .Left => left: {
+                            assert(parent.*.left_idx == self_idx);
+                            break :left &parent.*.left_idx;
+                        },
+                        .Right => right: {
+                            assert(parent.*.right_idx == self_idx);
+                            break :right &parent.*.right_idx;
+                        },
+                        else => @panic("root node with parent"),
+                    };
+                    branch_ptr.* = NULL_IDX;
+                    const root_idx = balance_tree(nodes, self.parent_idx);
+                    std.debug.print("State after removal:{}\n", .{nodes});
+                    return .{ .root_idx = root_idx, .removed_idx = self_idx };
+                }
+
+                var call_move_right_red = false;
+                //if right is black and right.left is black
+                const right = &nodes.items[self.right_idx];
+                blk: { //if right is black and right.left is black
+                    if (right.colour != .Black) break :blk;
+                    if (right.left_idx == NULL_IDX) {
+                        call_move_right_red = true;
+                        break :blk;
+                    }
+                    const right_left = nodes.items[right.left_idx];
+                    if (right_left.colour != .Black) break :blk;
+                    call_move_right_red = true;
+                }
+
+                if (call_move_right_red) self.move_right_red(nodes, self_idx);
+
+                std.debug.print("\n\nTree state after calling move right: {}\n.Keys:{any}\n", .{ nodes, keys });
+                std.process.exit(1);
+                return right.delete(nodes, keys, self.right_idx, key);
+            }
+        }
+
+        pub fn move_left_red(self: *Node, nodes: *NodeList, self_idx: u32) void {
+            std.debug.print("Moving left\n", .{});
+            colour_flip(self, nodes, self_idx, false);
+            //if right.left is red
+            if (self.right_idx == NULL_IDX) return;
+            const right = nodes.items[self.right_idx];
+
+            if (right.left_idx == NULL_IDX) return;
+            const right_left = nodes.items[right.left_idx];
+            if (right_left.colour == .Black) return;
+
+            rotate_right(nodes, self.right_idx, false);
+            rotate_left(nodes, self_idx, false);
+
+            const parent = &nodes.items[self.parent_idx];
+            colour_flip(parent, nodes, self.parent_idx, false);
+            if (parent.parent_direction == .Root) parent.colour = .Black;
+            return;
+        }
+
+        pub fn move_right_red(self: *Node, nodes: *NodeList, self_idx: u32) void {
+            std.debug.print("Moving right\n", .{});
+            colour_flip(self, nodes, self_idx, false);
+
+            //if left.left is red
+            if (self.left_idx == NULL_IDX) return;
+            const left = nodes.items[self.left_idx];
+
+            if (left.left_idx == NULL_IDX) return;
+            const left_left = nodes.items[left.left_idx];
+            if (left_left.colour == .Black) return;
+
+            rotate_right(nodes, self_idx, false);
+            const parent = &nodes.items[self.parent_idx];
+            colour_flip(parent, nodes, self.parent_idx, false);
+            if (parent.parent_direction == .Root) parent.colour = .Black;
+            return;
+        }
+        // ///Preconditions and Rules:
         //You can only rotate left on a node with a red right link
         // //Rotating left on the root node makes the child node the new root
-        pub fn rotate_left(nodes: *NodeList, node_idx: u32) void {
+        ///The safety_check flag indicates whether or not to add the assertions for inserts and balances
+        pub fn rotate_left(nodes: *NodeList, node_idx: u32, safety_check: bool) void {
             const node = &nodes.items[node_idx];
 
             assert(node.right_idx != NULL_IDX);
 
             const right_child_idx = node.right_idx;
             const right_child = &nodes.items[right_child_idx];
-            assert(right_child.*.colour == .Red);
+            if (safety_check) assert(right_child.*.colour == .Red);
 
             if (node.*.parent_idx != NULL_IDX) {
                 const parent = &nodes.items[node.*.parent_idx];
@@ -335,43 +466,17 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
             right_child.*.colour = node_colour;
         }
 
-        ///Preconditions and Rules:
-        /// You can only rotate right on a node with a red left link
-        /// Rotating right on the root node makes the child node the new root
-
-        // Rotate right at node [30] to fix Red-Red left link: [30] -> [20] -> [10]
-        //
-        // BEFORE: Double Red Violation at [30]
-        //
-        //             [30] (B)
-        //            /        \
-        //           /          \      <- Links from [30]
-        //          /            \
-        //       [20] (R)        [40] (B)
-        //      /        \
-        //    /          \      <- Links from [20]
-        //    /            \
-        // [10] (R)        [25] (B)
-        //
-        // AFTER: Structure & Color Adjusted
-        //
-        //              [20] (B)   <- [20] moved up, became Black
-        //             /        \
-        //           /           \     <- Link [20] -> [10] stayed Red.
-        //           /            \     <- Link [20] -> [30] became Red!
-        //        [10] (R)        [30] (R)
-        //                       /         \
-        //                      /           \     <- Links from [30]
-        //                     /             \
-        //                   [25] (B)      [40] (B) <- [25] moved. [40] stayed.
-
-        pub fn rotate_right(nodes: *NodeList, node_idx: u32) void {
+        //Preconditions and Rules:
+        // You can only rotate right on a node with a red left link
+        // Rotating right on the root node makes the child node the new root
+        ///The safety_check flag indicates whether or not to add the assertions for inserts and balances
+        pub fn rotate_right(nodes: *NodeList, node_idx: u32, safety_check: bool) void {
             const node = access(node_idx, nodes);
 
             assert(node.left_idx != NULL_IDX);
             const left_child = access(node.left_idx, nodes);
 
-            assert(left_child.colour == .Red);
+            if (safety_check) assert(left_child.colour == .Red);
 
             if (node.parent_idx != NULL_IDX) {
                 const parent = access(node.parent_idx, nodes);
@@ -432,7 +537,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     const left = access(parent.left_idx, nodes);
 
                     if (left.colour != .Red) break :flip_check;
-                    colour_flip(parent, nodes, parent_idx);
+                    colour_flip(parent, nodes, parent_idx, true);
 
                     switch (parent.parent_direction) {
                         .Root => {
@@ -443,7 +548,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                         else => return balance_tree(nodes, parent_idx),
                     }
                 }
-                rotate_left(nodes, parent_idx);
+                rotate_left(nodes, parent_idx, true);
                 return balance_tree(nodes, node.left_idx);
             } else { //a left red child
                 //Because of the earlier assertion, we are assured that the parent of this node is not the root node
@@ -453,9 +558,9 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     if (parent.parent_idx == NULL_IDX) @panic("Cannot have double red links without a grandparent\n");
                     const grand_parent_idx = parent.parent_idx;
 
-                    rotate_right(nodes, grand_parent_idx);
+                    rotate_right(nodes, grand_parent_idx, true);
                     //After flipping, the grandparent is now the child of the parent, hence this code -- man, what is this family tree nonsense?
-                    colour_flip(parent, nodes, node.parent_idx); //Rotating a double-left always requires a subsequent colour flip
+                    colour_flip(parent, nodes, node.parent_idx, true); //Rotating a double-left always requires a subsequent colour flip
 
                     if (parent.parent_direction == .Root) {
                         assert(parent.parent_idx == NULL_IDX);
@@ -469,7 +574,9 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
             return balance_tree(nodes, node_idx);
         }
 
-        fn colour_flip(node: *Node, nodes: *NodeList, node_idx: u32) void {
+        ///NOTE TO SELF: The node_idx parameter here is useless. Remove it.
+        ///The safety_check flag indicates whether or not to add the assertions for inserts and balances
+        fn colour_flip(node: *Node, nodes: *NodeList, node_idx: u32, safety_check: bool) void {
             if (node.left_idx == NULL_IDX or node.right_idx == NULL_IDX) {
                 std.debug.panic("Can't flip without two children.\nNodes:{}\t{}", .{ node.left_idx, node.right_idx });
             }
@@ -477,14 +584,13 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
             const left = access(node.left_idx, nodes);
             const right = access(node.right_idx, nodes);
-            assert(left.colour == .Red and right.colour == .Red);
+            if (safety_check) assert(left.colour == .Red and right.colour == .Red);
 
-            left.colour = .Black;
-            right.colour = .Black;
-            node.colour = .Red;
+            left.colour = @enumFromInt(~@intFromEnum(left.colour));
+            right.colour = @enumFromInt(~@intFromEnum(right.colour));
+            node.colour = @enumFromInt(~@intFromEnum(right.colour));
         }
 
-        //helper function because I can't keep typing the @as syntax over and over
         pub fn access(index: u32, nodes: *NodeList) *Node {
             return &nodes.items[index];
         }
