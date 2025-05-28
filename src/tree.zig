@@ -175,8 +175,11 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
         }
 
         pub fn getOrPut(self: *Self, allocator: Allocator, kv: KV) !GetOrPutResult {
-            try self.nodes.ensureUnusedCapacity(allocator, 1);
-            try self.kv_list.ensureUnusedCapacity(allocator, 1);
+            if (self.nodes.capacity <= self.nodes.items.len + 1) {
+                const cap = std.math.ceilPowerOfTwo(usize, @max(1, self.nodes.capacity)) catch unreachable;
+                try self.nodes.ensureUnusedCapacity(allocator, cap);
+                try self.kv_list.ensureUnusedCapacity(allocator, cap);
+            }
             return getOrPutAssumeCapacity(self, kv);
         }
 
