@@ -12,7 +12,7 @@ pub fn main() !void {
     var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
-    const input = [_]u16{ 8, 4, 12, 2, 6, 10, 14, 1, 3, 5, 7, 9, 11, 13, 15 };
+    const input = [_]u16{ 50, 25, 75, 10, 35, 60, 90, 5, 15, 30, 40, 55, 70, 80, 95 };
     // var i: usize = 0;
     // while (i < 31) : (i += 5) {
     //     var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = 999 } });
@@ -50,7 +50,8 @@ pub fn main() !void {
 
     // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
     // // std.debug.print("Search:{any}\n", .{tree.search(20)});
-    _ = tree.delete(1);
+    _ = tree.delete(50);
+    // _ = tree.delete(5);
 
     std.debug.print("Tree: {}\n\n", .{tree});
     std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});

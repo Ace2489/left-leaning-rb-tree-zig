@@ -393,29 +393,31 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     if (right_left.colour != .Black) break :blk;
                     call_move_right_red = true;
                 }
-
                 if (call_move_right_red) self.move_right_red(nodes, self_idx);
 
                 if (compare == .eq) {
                     //find a minimum key in the node's right sub-tree(successor)
                     const rt = &nodes.items[self.right_idx]; //There was an earlier check to ensure that the right tree exists
-                    var successor_idx = rt.left_idx;
+                    var successor_idx = self.right_idx;
 
                     var successor: *Node = rt;
                     var successor_parent_direction: ParentDirection = .Right;
-                    while (successor_idx != NULL_IDX) {
-                        successor = &nodes.items[successor_idx];
+                    while (successor.*.left_idx != NULL_IDX) {
+                        std.debug.print("key:{}\n", .{keys[successor.key_idx]});
                         const call_move_left_red =
                             blk: {
-                                if (successor.colour != .Black) break :blk false;
                                 if (successor.left_idx == NULL_IDX) break :blk true;
-                                const left_left = nodes.items[successor.left_idx];
+                                const left = &nodes.items[successor.left_idx];
+                                if (left.colour != .Black) break :blk false;
+
+                                if (left.left_idx == NULL_IDX) break :blk true;
+                                const left_left = &nodes.items[left.left_idx];
                                 if (left_left.colour != .Black) break :blk false;
                                 break :blk true;
                             };
-                        if (call_move_left_red) rt.move_left_red(nodes, self.right_idx);
-
+                        if (call_move_left_red) successor.move_left_red(nodes, successor_idx);
                         successor_idx = successor.*.left_idx;
+                        successor = &nodes.items[successor.*.left_idx];
                         successor_parent_direction = .Left;
                     }
 
@@ -478,6 +480,8 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     self.parent_idx = NULL_IDX;
                     self.right_idx = NULL_IDX;
                     self.left_idx = NULL_IDX;
+                    // std.debug.print("tree state: {}\nkeys: {any}", .{ nodes, keys });
+                    // std.process.exit(1);
                     const root_idx = fix_up(nodes, balance_idx);
                     return .{ .root_idx = root_idx, .removed_idx = self_idx };
                 } else return right.delete(nodes, keys, self.right_idx, key);
@@ -492,14 +496,14 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
             if (right.left_idx == NULL_IDX) return;
             const right_left = nodes.items[right.left_idx];
-            if (right_left.colour == .Black) return;
+            if (right_left.colour == .Red) {
+                rotate_right(nodes, self.right_idx, false);
+                rotate_left(nodes, self_idx, false);
+                const parent = &nodes.items[self.parent_idx];
+                colour_flip(parent, nodes, self.parent_idx, false);
+                if (parent.parent_direction == .Root) parent.colour = .Black;
+            }
 
-            rotate_right(nodes, self.right_idx, false);
-            rotate_left(nodes, self_idx, false);
-
-            const parent = &nodes.items[self.parent_idx];
-            colour_flip(parent, nodes, self.parent_idx, false);
-            if (parent.parent_direction == .Root) parent.colour = .Black;
             return;
         }
 
