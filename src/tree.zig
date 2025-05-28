@@ -223,6 +223,8 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             const removed_kv = self.kv_list.get(removed_node.key_idx);
             self.kv_list.swapRemove(removed_node.key_idx);
 
+            if (result.removed_idx == self.nodes.items.len) return removed_kv;
+
             var swapped_node = &self.nodes.items[result.removed_idx];
             swapped_node.key_idx = result.removed_idx;
 
