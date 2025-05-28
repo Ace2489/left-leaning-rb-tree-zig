@@ -12,23 +12,26 @@ pub fn main() !void {
     var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
     defer tree.deinit(allocator);
 
-    var i: usize = 5;
-    while (i < 26) : (i += 5) {
-        var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = 999 } });
+    const input = [_]u16{ 50, 25, 75, 12, 37, 62, 87 };
+    // var i: usize = 0;
+    // while (i < 31) : (i += 5) {
+    //     var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = 999 } });
+    //     res.update_value();
+    // }
+    for (input) |i| {
+        var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i + 10 } });
         res.update_value();
     }
-    var res = tree.getOrPutAssumeCapacity(.{ .key = 12, .value = .{ .num = 999 } });
-    res.update_value();
+    // var res = tree.getOrPutAssumeCapacity(.{ .key = 10, .value = .{ .num = 999 } });
+    // res.update_value();
 
-    var res2 = tree.getOrPutAssumeCapacity(.{ .key = 17, .value = .{ .num = 999 } });
-    res2.update_value();
+    // var res2 = tree.getOrPutAssumeCapacity(.{ .key = 15, .value = .{ .num = 999 } });
+    // res2.update_value();
 
-    // var res3 = tree.getOrPutAssumeCapacity(.{ .key = 3, .value = .{ .num = 999 } });
+    // var res3 = tree.getOrPutAssumeCapacity(.{ .key = 20, .value = .{ .num = 999 } });
     // res3.update_value();
 
-    _ = tree.delete(17);
     // for (0..999) |i| {
-    //     std.debug.print("iteration: {}\n", .{i});
 
     //     const result = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i } });
     //     // std.debug.print("getOrPutResult: {}\n", .{result});
@@ -45,10 +48,13 @@ pub fn main() !void {
     // tree.insert(27);
     // tree.insert(6);
 
-    // std.debug.print("Tree: {}\n\n", .{tree});
-    // std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
     // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
     // // std.debug.print("Search:{any}\n", .{tree.search(20)});
+    _ = tree.delete(25);
+
+    std.debug.print("Tree: {}\n\n", .{tree});
+    std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
+    std.debug.print("Get 15 {any}\n", .{tree.search(62)});
     // _ = tree.update(.{ .key = 20, .value = .{ .num = tree.search(20).?.num + 500 } });
     // std.debug.print("Search:{any}\n", .{tree.search(20)});
 }

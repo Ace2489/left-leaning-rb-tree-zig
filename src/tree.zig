@@ -209,6 +209,7 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             if (self.root_idx == NULL_IDX) return null; //No tree lol
             var root = &self.nodes.items[self.root_idx];
 
+            if (self.search(key) == null) return null;
             const result = root.delete(&self.nodes, self.kv_list.items(.key), self.root_idx, key);
 
             if (result.removed_idx == NULL_IDX) return null; //Element not found;
@@ -218,9 +219,36 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             self.root_idx = result.root_idx;
 
             const removed_node = self.nodes.swapRemove(result.removed_idx);
-            const removed_kv = self.kv_list.get(removed_node.key_idx);
 
+            const removed_kv = self.kv_list.get(removed_node.key_idx);
             self.kv_list.swapRemove(removed_node.key_idx);
+
+            var swapped_node = &self.nodes.items[result.removed_idx];
+            swapped_node.key_idx = result.removed_idx;
+
+            var swapped_kv = self.kv_list.slice().get(result.removed_idx);
+            swapped_kv.key = result.removed_idx;
+
+            //Re-linking parent and child nodes
+
+            if (swapped_node.left_idx != NULL_IDX) {
+                var left = &self.nodes.items[swapped_node.left_idx];
+                left.parent_idx = result.removed_idx;
+            }
+            if (swapped_node.right_idx != NULL_IDX) {
+                var right = &self.nodes.items[swapped_node.right_idx];
+                right.parent_idx = result.removed_idx;
+            }
+
+            if (swapped_node.parent_idx != NULL_IDX) {
+                var parent = &self.nodes.items[swapped_node.parent_idx];
+                switch (swapped_node.parent_direction) {
+                    .Left => parent.left_idx = result.removed_idx,
+                    .Right => parent.right_idx = result.removed_idx,
+                    .Root => @panic("The root cannot have a non-null parent idx"),
+                }
+            }
+
             return removed_kv;
         }
 
@@ -305,7 +333,6 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
         pub fn delete(self: *Node, nodes: *NodeList, keys: Keys, self_idx: u32, key: K) struct { root_idx: u32, removed_idx: u32 } {
             const compare = compare_fn(key, keys[self.key_idx]);
-            std.debug.print("Comp result: {}\n", .{compare});
             if (compare == .lt) {
                 if (self.left_idx == NULL_IDX) return .{ .root_idx = NULL_IDX, .removed_idx = NULL_IDX };
                 var call_move_left_red = false;
@@ -322,11 +349,9 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     if (left_left.colour != .Black) break :blk;
                     call_move_left_red = true;
                 }
-                std.debug.print("\n\nTree state before calling move left: {}\n.Keys:{any}\n", .{ nodes, keys });
                 if (call_move_left_red) self.move_left_red(nodes, self_idx);
                 return left.delete(nodes, keys, self.left_idx, key);
             } else {
-                std.debug.print("\n\nTree state before calling eql and gt: {}\n.Keys:{any}\n", .{ nodes, keys });
                 if (self.left_idx != NULL_IDX) {
                     const left = nodes.items[self.left_idx];
                     if (left.colour == .Red) {
@@ -349,8 +374,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                         else => @panic("root node with parent"),
                     };
                     branch_ptr.* = NULL_IDX;
-                    const root_idx = balance_tree(nodes, self.parent_idx);
-                    std.debug.print("State after removal:{}\n", .{nodes});
+                    const root_idx = fix_up(nodes, self.parent_idx);
                     return .{ .root_idx = root_idx, .removed_idx = self_idx };
                 }
 
@@ -370,14 +394,95 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
                 if (call_move_right_red) self.move_right_red(nodes, self_idx);
 
-                std.debug.print("\n\nTree state after calling move right: {}\n.Keys:{any}\n", .{ nodes, keys });
-                std.process.exit(1);
-                return right.delete(nodes, keys, self.right_idx, key);
+                if (compare == .eq) {
+                    //find a minimum key in the node's right sub-tree(successor)
+                    const rt = &nodes.items[self.right_idx]; //There was an earlier check to ensure that the right tree exists
+                    var successor_idx = rt.left_idx;
+
+                    var successor: *Node = rt;
+                    var successor_parent_direction: ParentDirection = .Right;
+                    while (successor_idx != NULL_IDX) {
+                        successor = &nodes.items[successor_idx];
+                        const call_move_left_red =
+                            blk: {
+                                if (successor.colour != .Black) break :blk false;
+                                if (successor.left_idx == NULL_IDX) break :blk true;
+                                const left_left = nodes.items[successor.left_idx];
+                                if (left_left.colour != .Black) break :blk false;
+                                break :blk true;
+                            };
+                        if (call_move_left_red) rt.move_left_red(nodes, self.right_idx);
+
+                        successor_idx = successor.*.left_idx;
+                        successor_parent_direction = .Left;
+                    }
+
+                    //Now replace the deleted node with its successor
+                    const successor_parent = &nodes.items[successor.parent_idx];
+                    var balance_idx = successor.parent_idx;
+                    replace: {
+                        switch (successor_parent_direction) {
+                            .Left => {
+                                successor_idx = successor_parent.*.left_idx;
+                                successor_parent.*.left_idx = NULL_IDX;
+                                if (successor_parent.*.right_idx != NULL_IDX) balance_idx = successor_parent.*.right_idx;
+                            },
+                            .Right => {
+                                successor_idx = successor_parent.*.right_idx;
+                                successor_parent.*.right_idx = NULL_IDX;
+                                if (successor_parent.*.right_idx != NULL_IDX) balance_idx = successor_parent.*.left_idx;
+                            },
+                            .Root => @panic("root cannot be the successor"),
+                        }
+
+                        successor.*.parent_direction = self.parent_direction;
+                        successor.*.parent_idx = self.parent_idx;
+                        successor.*.left_idx = self.left_idx;
+                        successor.*.right_idx = self.right_idx;
+                        successor.*.colour = self.colour;
+
+                        if (successor.*.right_idx != NULL_IDX) {
+                            const right_child = &nodes.items[successor.*.right_idx];
+                            right_child.*.parent_idx = successor_idx;
+                        }
+
+                        if (successor.*.left_idx != NULL_IDX) {
+                            const left_child = &nodes.items[successor.*.left_idx];
+                            left_child.*.parent_idx = successor_idx;
+                        }
+
+                        if (self.parent_idx == NULL_IDX) {
+                            assert(self.parent_direction == .Root);
+                            break :replace;
+                        }
+                        const deleted_node_parent = &nodes.items[self.parent_idx];
+
+                        switch (self.parent_direction) {
+                            .Root => {
+                                assert(self.parent_idx == NULL_IDX);
+                            },
+                            .Left => {
+                                assert(deleted_node_parent.left_idx == self_idx);
+                                deleted_node_parent.*.left_idx = successor_idx;
+                                if (deleted_node_parent.*.right_idx != NULL_IDX) balance_idx = deleted_node_parent.*.right_idx;
+                            },
+                            .Right => {
+                                assert(deleted_node_parent.right_idx == self_idx);
+                                deleted_node_parent.*.right_idx = successor_idx;
+                                if (deleted_node_parent.*.left_idx != NULL_IDX) balance_idx = deleted_node_parent.*.left_idx;
+                            },
+                        }
+                    }
+                    self.parent_idx = NULL_IDX;
+                    self.right_idx = NULL_IDX;
+                    self.left_idx = NULL_IDX;
+                    const root_idx = fix_up(nodes, balance_idx);
+                    return .{ .root_idx = root_idx, .removed_idx = self_idx };
+                } else return right.delete(nodes, keys, self.right_idx, key);
             }
         }
 
         pub fn move_left_red(self: *Node, nodes: *NodeList, self_idx: u32) void {
-            std.debug.print("Moving left\n", .{});
             colour_flip(self, nodes, self_idx, false);
             //if right.left is red
             if (self.right_idx == NULL_IDX) return;
@@ -397,7 +502,6 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
         }
 
         pub fn move_right_red(self: *Node, nodes: *NodeList, self_idx: u32) void {
-            std.debug.print("Moving right\n", .{});
             colour_flip(self, nodes, self_idx, false);
 
             //if left.left is red
@@ -520,7 +624,10 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                 return node_idx;
             }
 
-            if (node.parent_idx == NULL_IDX) @panic("Cannot balance the root node"); //The previous check should stop this from being triggered
+            if (node.parent_idx == NULL_IDX) {
+                @panic("Cannot balance the root node"); //The previous check should stop this from being triggered
+
+            }
 
             const parent = access(node.parent_idx, nodes);
             const parent_idx = node.parent_idx;
@@ -574,6 +681,54 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
             return balance_tree(nodes, node_idx);
         }
 
+        fn fix_up(nodes: *NodeList, node_idx: u32) u32 {
+            assert(node_idx != NULL_IDX);
+            const node = &nodes.items[node_idx];
+
+            right_link: {
+                if (node.right_idx == NULL_IDX) break :right_link;
+                if (node.left_idx != NULL_IDX) {
+                    const left = nodes.items[node.left_idx];
+                    if (left.colour == .Red) break :right_link;
+                }
+
+                const right = &nodes.items[node.right_idx];
+                if (right.colour != .Red) break :right_link;
+                rotate_left(nodes, node_idx, true);
+                return fix_up(nodes, node.parent_idx);
+            }
+
+            flip_check: {
+                if (node.left_idx == NULL_IDX) break :flip_check;
+                if (node.right_idx == NULL_IDX) break :flip_check;
+                const left = &nodes.items[node.left_idx];
+                const right = &nodes.items[node.right_idx];
+
+                if (left.colour != .Red or right.colour != .Red) break :flip_check;
+                colour_flip(node, nodes, node_idx, true);
+            }
+
+            left_left: {
+                if (node.left_idx == NULL_IDX) break :left_left;
+                const left = &nodes.items[node.left_idx];
+
+                if (left.colour != .Red) break :left_left;
+                if (left.left_idx == NULL_IDX) break :left_left;
+
+                const left_left = &nodes.items[left.left_idx];
+                if (left_left.colour != .Red) break :left_left;
+                rotate_right(nodes, node_idx, true);
+                colour_flip(node, nodes, node.parent_idx, true); //rotating right to fix a left-left always results in a colour flip
+            }
+
+            if (node.parent_direction == .Root) {
+                assert(node.parent_idx == NULL_IDX);
+                node.colour = .Black;
+                return node_idx;
+            }
+            return fix_up(nodes, node.parent_idx);
+        }
+
         ///NOTE TO SELF: The node_idx parameter here is useless. Remove it.
         ///The safety_check flag indicates whether or not to add the assertions for inserts and balances
         fn colour_flip(node: *Node, nodes: *NodeList, node_idx: u32, safety_check: bool) void {
@@ -588,7 +743,7 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
 
             left.colour = @enumFromInt(~@intFromEnum(left.colour));
             right.colour = @enumFromInt(~@intFromEnum(right.colour));
-            node.colour = @enumFromInt(~@intFromEnum(right.colour));
+            node.colour = @enumFromInt(~@intFromEnum(node.colour));
         }
 
         pub fn access(index: u32, nodes: *NodeList) *Node {
