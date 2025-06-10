@@ -178,6 +178,10 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             if (self.nodes.capacity <= self.nodes.items.len + 1) {
                 const cap = std.math.ceilPowerOfTwo(usize, @max(1, self.nodes.capacity)) catch unreachable;
                 try self.nodes.ensureUnusedCapacity(allocator, cap);
+            }
+
+            if (self.kv_list.capacity <= self.kv_list.len + 1) {
+                const cap = std.math.ceilPowerOfTwo(usize, @max(1, self.nodes.capacity)) catch unreachable;
                 try self.kv_list.ensureUnusedCapacity(allocator, cap);
             }
             return getOrPutAssumeCapacity(self, kv);
