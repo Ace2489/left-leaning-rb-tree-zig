@@ -257,9 +257,47 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             return removed_kv;
         }
 
+        pub fn inorder(self: *Self, allocator: Allocator) !std.ArrayListUnmanaged(K) {
+            var out_list = std.ArrayListUnmanaged(K).empty;
+            var visited_nodes: std.SinglyLinkedList(u32) = .{};
+
+            const StackFrame = std.SinglyLinkedList(u32).Node;
+
+            if (self.root_idx == NULL_IDX) return .empty;
+            var current_idx = self.root_idx;
+
+            while (visited_nodes.first != null or current_idx != NULL_IDX) {
+                while (current_idx != NULL_IDX) {
+                    const stack_entry = try allocator.create(StackFrame);
+                    stack_entry.*.data = current_idx;
+                    visited_nodes.prepend(stack_entry);
+
+                    const node = &self.nodes.items[current_idx];
+                    current_idx = node.left_idx;
+                }
+                const current = visited_nodes.popFirst().?;
+                current_idx = current.*.data;
+                allocator.destroy(current);
+
+                try out_list.append(allocator, self.kv_list.items(.key)[current_idx]);
+                current_idx = (&self.nodes.items[current_idx]).*.right_idx;
+            }
+
+            return out_list;
+        }
+        ///Search for all the keys which match a range of values
+        pub fn filter(self: *Self, min: K, max: K, out_buffer: []K) usize {
+            assert(compare_fn(min, max) != .gt);
+
+            const keys = self.kv_list.items(.key);
+            if (self.root_idx == NULL_IDX) return 0;
+            const node = &self.nodes.items[self.root_idx];
+
+            return node.filter(&self.nodes, self.root_idx, keys, min, max, out_buffer, 0);
+        }
         ///Note: When using this method, it is your responsibility to make sure that all modifications to the value are coherent with the structure of the other values
         ///
-        /// E.g making sure that the re-assigned value has all of the fields of the old value
+        /// E.g For a value which is a struct, making sure that the re-assigned value has all of the fields of the old value
         /// Failure to do this will result in an inconsistent tree structure.
         ///
         ///Gets a index to the value in the tree for the given key.
@@ -271,6 +309,7 @@ pub fn Tree(comptime K: type, comptime V: type, compare_fn: fn (key: K, self_key
             if (idx == NULL_IDX) return NULL_IDX;
             return idx;
         }
+
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.nodes.deinit(allocator);
             self.kv_list.deinit(allocator);
@@ -489,6 +528,39 @@ pub fn node_gen(K: type, comptime compare_fn: fn (entry: K, self_entry: K) Order
                     return .{ .root_idx = root_idx, .removed_idx = self_idx };
                 } else return right.delete(nodes, keys, self.right_idx, key);
             }
+        }
+
+        pub fn filter(self: *const Node, nodes: *const NodeList, self_idx: u32, keys: Keys, min: K, max: K, out_buffer: []K, index: usize) usize {
+            if (index >= out_buffer.len) return index;
+
+            var idx = index;
+            const min_comp = compare_fn(min, keys[self_idx]);
+            if (min_comp == .lt) {
+                const left_idx = self.left_idx;
+                if (left_idx != NULL_IDX) {
+                    const left = &nodes.items[left_idx];
+                    idx = left.filter(nodes, left_idx, keys, min, max, out_buffer, idx);
+                    if (idx >= out_buffer.len) return idx; // Check after left traversal
+                }
+            }
+
+            const max_comp = compare_fn(max, keys[self_idx]);
+
+            if (min_comp != .gt and max_comp != .lt) {
+                out_buffer[idx] = keys[self_idx];
+                idx += 1;
+                if (idx >= out_buffer.len) return idx; // Check after adding current node
+            }
+
+            if (max_comp == .gt) {
+                const right_idx = self.right_idx;
+                if (right_idx != NULL_IDX) {
+                    const right = &nodes.items[right_idx];
+                    idx = right.filter(nodes, right_idx, keys, min, max, out_buffer, idx);
+                }
+            }
+
+            return idx;
         }
 
         pub fn move_left_red(self: *Node, nodes: *NodeList, self_idx: u32) void {

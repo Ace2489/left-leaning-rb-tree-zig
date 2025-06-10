@@ -7,19 +7,22 @@ pub fn main() !void {
     const allocator = debug.allocator();
     defer _ = debug.deinit();
 
-    const capacity: usize = 1000;
+    // const capacity: usize = 1000;
 
-    var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
+    // var tree = try Tree(u64, Data, compare_fn).init_with_capacity(allocator, capacity);
+    // defer tree.deinit(allocator);
+
+    var tree = Tree(u64, Data, compare_fn).empty;
     defer tree.deinit(allocator);
-
-    const input = [_]u16{ 50, 25, 75, 10, 35, 60, 90, 5, 15, 30, 40, 55, 70, 80, 95 };
+    const input = [_]u16{ 0, 5, 10, 15, 20, 25, 30 };
     // var i: usize = 0;
     // while (i < 31) : (i += 5) {
     //     var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = 999 } });
     //     res.update_value();
     // }
-    for (input) |i| {
-        var res = tree.getOrPutAssumeCapacity(.{ .key = i, .value = .{ .num = i + 10 } });
+    var i = input.len;
+    while (i > 0) : (i -= 1) {
+        var res = try tree.getOrPut(allocator, .{ .key = input[i - 1], .value = .{ .num = i } });
         res.update_value();
     }
     // var res = tree.getOrPutAssumeCapacity(.{ .key = 10, .value = .{ .num = 999 } });
@@ -48,16 +51,25 @@ pub fn main() !void {
     // tree.insert(27);
     // tree.insert(6);
 
-    // std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
+    // _ = tree.update(.{ .key = 20, .value = .{ .num = 2500 } });
+    std.debug.print("KV list values:{any}\n", .{tree.kv_list.items(.value)});
     // // std.debug.print("Search:{any}\n", .{tree.search(20)});
-    _ = tree.delete(50);
     // _ = tree.delete(5);
 
     std.debug.print("Tree: {}\n\n", .{tree});
     std.debug.print("KV list keys:{any}\n", .{tree.kv_list.items(.key)});
-    std.debug.print("Get 15 {any}\n", .{tree.search(62)});
-    // _ = tree.update(.{ .key = 20, .value = .{ .num = tree.search(20).?.num + 500 } });
-    // std.debug.print("Search:{any}\n", .{tree.search(20)});
+
+    var inorder = try tree.inorder(allocator);
+    defer inorder.deinit(allocator);
+    std.debug.print("{any}\n", .{inorder});
+
+    var buffer: [2]u64 = undefined;
+    @memset(&buffer, 0);
+
+    const count = tree.filter(0, 4005, &buffer);
+    for (0..count) |idx| {
+        std.debug.print("Filtered value:{any}\n", .{buffer[idx]});
+    }
 }
 
 fn compare_fn(a: u64, b: u64) std.math.Order {
